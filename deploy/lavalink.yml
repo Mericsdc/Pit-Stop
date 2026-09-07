@@ -1,0 +1,77 @@
+# Lavalink 4.2.2. Keep the two plugin versions pinned and test playback after updates.
+# Sources: github.com/lavalink-devs/youtube-source and github.com/topi314/LavaSrc.
+server:
+  address: 0.0.0.0
+  port: 2333
+lavalink:
+  plugins:
+    - dependency: dev.lavalink.youtube:youtube-plugin:1.18.2
+      snapshot: false
+    - dependency: com.github.topi314.lavasrc:lavasrc-plugin:4.8.3
+      snapshot: false
+  server:
+    password: ${LAVALINK_PASSWORD}
+    sources:
+      youtube: false
+      bandcamp: false
+      soundcloud: false
+      twitch: false
+      vimeo: false
+      nico: false
+      http: false
+      local: false
+    youtubePlaylistLoadLimit: 1
+    playerUpdateInterval: 5
+    trackStuckThresholdMs: 10000
+    opusEncodingQuality: 10
+    resamplingQuality: LOW
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: false
+    allowDirectPlaylistIds: false
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - WEB
+      - WEBEMBEDDED
+  lavasrc:
+    # Spotify resolves metadata only. Audio is matched through registered YouTube sources.
+    providers:
+      - 'ytsearch:"%ISRC%"'
+      - 'ytmsearch:%QUERY%'
+      - 'ytsearch:%QUERY%'
+    sources:
+      spotify: ${SPOTIFY_ENABLED:false}
+      applemusic: false
+      deezer: false
+      yandexmusic: false
+      flowerytts: false
+      youtube: false
+      vkmusic: false
+      tidal: false
+      qobuz: false
+      ytdlp: false
+      jiosaavn: false
+    spotify:
+      clientId: ${SPOTIFY_CLIENT_ID:}
+      clientSecret: ${SPOTIFY_CLIENT_SECRET:}
+      countryCode: TR
+      playlistLoadLimit: 1
+      albumLoadLimit: 1
+      resolveArtistsInSearch: false
+      localFiles: false
+      preferPartnerApi: false
+metrics:
+  prometheus:
+    enabled: false
+logging:
+  level:
+    root: INFO
+    lavalink: INFO
+  request:
+    enabled: false
+    includeHeaders: false
+    includeQueryString: false
+    includePayload: false

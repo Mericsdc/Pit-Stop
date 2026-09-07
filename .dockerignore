@@ -1,0 +1,15 @@
+**
+!package.json
+!package-lock.json
+!src/
+!src/**
+!public/
+!public/**
+!scripts/
+!scripts/**
+!assets/
+!assets/**
+**/.env
+**/.env.*
+**/*.log
+**/node_modules

@@ -1,0 +1,331 @@
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import test from 'node:test';
+import { ChannelType, Collection, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
+import { createDashboard, validateGuildSettings } from '../src/dashboard.js';
+import { createStore } from '../src/store.js';
+
+const GUILD = '1400000000000000000';
+const USER = '1400000000000000001';
+const ROLE = '1400000000000000002';
+const CHANNEL = '1400000000000000003';
+const BOT = '1400000000000000004';
+const OTHER_GUILD = '1400000000000000005';
+const PUBLIC_ORIGIN = 'https://pit-stop.example';
+const SECRETS = ['BOT_TOKEN_TEST_abc', 'OAUTH_SECRET_TEST_abc', 'SESSION_SECRET_TEST_abcdefghijklmnopqrstuvwxyz', 'ACCESS_TOKEN_TEST_abc'];
+const adminPermissions = PermissionFlagsBits.ManageGuild | PermissionFlagsBits.ManageRoles
+  | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.SendMessages | PermissionFlagsBits.EmbedLinks;
+
+async function setup(t, configOverrides = {}) {
+  const store = createStore(':memory:');
+  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [] };
+  const member = {
+    id: USER, permissions: new PermissionsBitField(adminPermissions),
+    roles: { highest: { comparePositionTo: (role) => 10 - role.position } },
+  };
+  const botMember = { id: BOT, permissions: new PermissionsBitField(PermissionFlagsBits.Administrator) };
+  const role = { id: ROLE, name: 'Üye', position: 2, editable: true, managed: false, hexColor: '#ff4400' };
+  const channel = {
+    id: CHANNEL, guildId: GUILD, name: 'genel', type: ChannelType.GuildText,
+    permissionsFor: () => new PermissionsBitField(adminPermissions),
+  };
+  const channels = new Collection([[CHANNEL, channel]]);
+  const roles = new Collection([[ROLE, role]]);
+  const guild = {
+    id: GUILD, name: 'Garaj', ownerId: '1400000000000000999', memberCount: 42,
+    iconURL: () => null,
+    channels: { cache: channels, fetch: async (id) => id ? channels.get(id) : channels },
+    roles: { cache: roles, fetch: async (id) => id ? roles.get(id) : roles },
+    members: {
+      me: botMember,
+      fetch: async (options) => { calls.memberFetches.push(options); return member; },
+    },
+  };
+  channel.guild = guild;
+  role.guild = guild;
+  const forbiddenGuild = {
+    ...guild, id: OTHER_GUILD,
+    members: { me: botMember, fetch: async () => ({ ...member, permissions: new PermissionsBitField(0n) }) },
+  };
+  const client = {
+    guilds: { cache: new Collection([[GUILD, guild], [OTHER_GUILD, forbiddenGuild]]) },
+    isReady: () => true, ws: { ping: 35 },
+  };
+  const music = {
+    getStatus: () => ({ available: true, connected: false, volume: 50, current: null, queue: [], spotifyConfigured: false }),
+    control: async (...args) => { calls.music.push(args); },
+    applySettings: async (...args) => { calls.settings.push(args); },
+  };
+  const config = {
+    publicUrl: PUBLIC_ORIGIN,
+    clientId: BOT,
+    token: SECRETS[0],
+    clientSecret: SECRETS[1],
+    sessionSecret: SECRETS[2],
+    ...configOverrides,
+  };
+  const fetcher = async (url, options) => {
+    calls.discord.push({ url: String(url), options });
+    const path = new URL(url).pathname;
+    if (path === '/api/v10/oauth2/token') {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.body.get('client_secret'), SECRETS[1]);
+      return Response.json({ access_token: SECRETS[3], expires_in: 3600 });
+    }
+    assert.equal(options.headers.Authorization, `Bearer ${SECRETS[3]}`);
+    if (path === '/api/v10/users/@me') {
+      return Response.json({ id: USER, username: 'pilot', global_name: 'Pilot', avatar: null, internal: 'not public' });
+    }
+    if (path === '/api/v10/users/@me/guilds') {
+      return Response.json([
+        { id: GUILD, name: guild.name, icon: null, permissions: PermissionFlagsBits.ManageGuild.toString() },
+        { id: OTHER_GUILD, name: 'İzinsiz', icon: null, permissions: '0' },
+        { id: '1400000000000000777', name: 'Bot yok', icon: null, permissions: PermissionFlagsBits.Administrator.toString() },
+      ]);
+    }
+    throw new Error(`Unexpected mocked Discord request: ${path}`);
+  };
+  const server = createDashboard({ client, store, music, config, fetcher, logger: (...args) => calls.diagnostics.push(args) });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  t.after(async () => {
+    const closed = once(server, 'close');
+    server.close();
+    server.closeAllConnections();
+    await closed;
+    store.close();
+  });
+
+  const request = (path, options = {}) => fetch(`${origin}${path}`, { redirect: 'manual', ...options });
+  async function beginLogin() {
+    const response = await request('/auth/login');
+    assert.equal(response.status, 303);
+    const target = new URL(response.headers.get('location'));
+    const stateCookie = response.headers.getSetCookie().find((value) => value.startsWith('pitstop_state='));
+    return { response, target, state: target.searchParams.get('state'), cookie: stateCookie.split(';')[0] };
+  }
+  async function login() {
+    const initial = await beginLogin();
+    const callback = await request(`/auth/callback?code=fake-authorization-code&state=${encodeURIComponent(initial.state)}`, {
+      headers: { Cookie: initial.cookie },
+    });
+    assert.equal(callback.status, 303);
+    const sessionCookie = callback.headers.getSetCookie().find((value) => value.startsWith('pitstop_session='));
+    assert.ok(sessionCookie);
+    const cookie = sessionCookie.split(';')[0];
+    const me = await request('/api/me', { headers: { Cookie: cookie } });
+    assert.equal(me.status, 200);
+    const body = await me.json();
+    return { ...initial, callback, cookie, sessionCookie, csrf: body.csrf, me: body };
+  }
+  const mutation = (path, session, body, headers = {}) => request(path, {
+    method: 'PUT',
+    headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music };
+}
+
+function noSecrets(value) {
+  for (const secret of SECRETS) assert.equal(value.includes(secret), false, 'A private credential was exposed');
+}
+
+test('OAuth HTTP flow issues protected state/session cookies and supports first-time consent', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  assert.equal(session.target.origin, 'https://discord.com');
+  assert.equal(session.target.searchParams.get('scope'), 'identify guilds');
+  assert.equal(session.target.searchParams.get('redirect_uri'), `${PUBLIC_ORIGIN}/auth/callback`);
+  assert.notEqual(session.target.searchParams.get('prompt'), 'none');
+  assert.ok(session.state.length >= 32);
+  for (const attribute of ['HttpOnly', 'SameSite=Lax', 'Secure']) assert.ok(session.sessionCookie.includes(attribute));
+  assert.deepEqual(Object.keys(session.me).sort(), ['csrf', 'user']);
+  assert.equal(session.me.user.id, USER);
+  noSecrets(JSON.stringify(session.me));
+});
+
+test('OAuth states cannot be replayed after a successful callback', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  const previousRequests = fixture.calls.discord.length;
+  const replay = await fixture.request(`/auth/callback?state=${session.state}&code=another-code`, {
+    headers: { Cookie: `pitstop_state=${session.state}` },
+  });
+  assert.equal(replay.status, 400);
+  assert.equal(fixture.calls.discord.length, previousRequests);
+});
+
+test('OAuth callback rejects absent or mismatched browser state before exchanging credentials', async (t) => {
+  const fixture = await setup(t);
+  for (const cookie of [undefined, 'pitstop_state=wrong-state']) {
+    const initial = await fixture.beginLogin();
+    const response = await fixture.request(`/auth/callback?state=${initial.state}&code=fake-code`, {
+      headers: cookie ? { Cookie: cookie } : {},
+    });
+    assert.equal(response.status, 400);
+  }
+  assert.equal(fixture.calls.discord.length, 0);
+});
+
+test('OAuth denial creates no session and consumes the state', async (t) => {
+  const fixture = await setup(t);
+  const initial = await fixture.beginLogin();
+  const response = await fixture.request(`/auth/callback?state=${initial.state}&error=access_denied`, { headers: { Cookie: initial.cookie } });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get('location'), '/?login=cancelled');
+  assert.equal(response.headers.getSetCookie().some((value) => value.startsWith('pitstop_session=')), false);
+  assert.equal(fixture.calls.discord.length, 0);
+});
+
+test('settings writes require both the session CSRF token and the configured origin', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  for (const headers of [
+    { 'X-CSRF-Token': '' },
+    { 'X-CSRF-Token': 'incorrect' },
+    { Origin: 'https://attacker.example' },
+    { Origin: '' },
+  ]) {
+    const response = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { musicVolume: 77 }, headers);
+    assert.equal(response.status, 403);
+  }
+  assert.equal(fixture.store.getSettings(GUILD).musicVolume, 50);
+  assert.equal(fixture.store.getLogs(GUILD).length, 0);
+  const valid = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { musicVolume: 77 });
+  assert.equal(valid.status, 200);
+  assert.equal((await valid.json()).musicVolume, 77);
+  assert.equal(fixture.store.getLogs(GUILD)[0].actorId, USER);
+});
+
+test('unauthenticated APIs and tampered session cookies are rejected', async (t) => {
+  const fixture = await setup(t);
+  for (const path of ['/api/me', '/api/guilds', `/api/guilds/${GUILD}`, `/api/guilds/${GUILD}/logs`]) {
+    assert.equal((await fixture.request(path)).status, 401);
+  }
+  const session = await fixture.login();
+  const forged = session.cookie.replace(/.$/u, session.cookie.endsWith('a') ? 'b' : 'a');
+  assert.equal((await fixture.request('/api/me', { headers: { Cookie: forged } })).status, 401);
+});
+
+test('guild listing excludes unmanageable guilds and guilds without the bot', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  const response = await fixture.request('/api/guilds', { headers: { Cookie: session.cookie } });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).map(({ id }) => id), [GUILD]);
+});
+
+test('guild authorization is enforced for reads and writes independently of OAuth guild listing', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  for (const resource of ['', '/logs', '/music']) {
+    const response = await fixture.request(`/api/guilds/${OTHER_GUILD}${resource}`, { headers: { Cookie: session.cookie } });
+    assert.equal(response.status, 403);
+  }
+  const forbidden = await fixture.mutation(`/api/guilds/${OTHER_GUILD}/settings`, session, { musicEnabled: true });
+  assert.equal(forbidden.status, 403);
+  assert.equal(fixture.store.getSettings(OTHER_GUILD).musicEnabled, false);
+  const missing = await fixture.request('/api/guilds/1400000000000000888', { headers: { Cookie: session.cookie } });
+  assert.equal(missing.status, 404);
+});
+
+test('removing ManageGuild revokes access immediately even with an existing login', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  const first = await fixture.request(`/api/guilds/${GUILD}`, { headers: { Cookie: session.cookie } });
+  assert.equal(first.status, 200);
+  fixture.member.permissions = new PermissionsBitField(0n);
+  const revoked = await fixture.request(`/api/guilds/${GUILD}/logs`, { headers: { Cookie: session.cookie } });
+  assert.equal(revoked.status, 403);
+  assert.ok(fixture.calls.memberFetches.every((options) => options.force === true && options.user === USER));
+});
+
+test('autorole settings require member permission and role hierarchy', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  fixture.member.permissions = new PermissionsBitField(PermissionFlagsBits.ManageGuild);
+  const noPermission = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { autoRoleId: ROLE });
+  assert.equal(noPermission.status, 400);
+  fixture.member.permissions = new PermissionsBitField(adminPermissions);
+  fixture.role.position = 11;
+  const tooHigh = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { autoRoleId: ROLE });
+  assert.equal(tooHigh.status, 400);
+  fixture.role.position = 2;
+  fixture.role.managed = true;
+  const managed = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { autoRoleId: ROLE });
+  assert.equal(managed.status, 400);
+  assert.equal(fixture.store.getSettings(GUILD).autoRoleId, null);
+});
+
+test('enabling a saved autorole rechecks permission even when the patch omits autoRoleId', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  fixture.store.updateSettings(GUILD, { autoRoleId: ROLE, autoRoleEnabled: false });
+  fixture.member.permissions = new PermissionsBitField(PermissionFlagsBits.ManageGuild);
+  const response = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { autoRoleEnabled: true });
+  assert.ok([400, 403].includes(response.status), `Expected denial, got ${response.status}`);
+  assert.equal(fixture.store.getSettings(GUILD).autoRoleEnabled, false);
+});
+
+test('channel validation rejects another guild and prevents hidden-channel writes', async (t) => {
+  const fixture = await setup(t);
+  fixture.channel.guildId = OTHER_GUILD;
+  await assert.rejects(() => validateGuildSettings(fixture.guild, fixture.member, { leaveChannelId: CHANNEL }), { status: 400 });
+  fixture.channel.guildId = GUILD;
+  fixture.channel.permissionsFor = (who) => new PermissionsBitField(who.id === USER ? 0n : adminPermissions);
+  await assert.rejects(() => validateGuildSettings(fixture.guild, fixture.member, { logChannelId: CHANNEL }), { status: 400 });
+});
+
+test('invalid settings and oversized bodies do not persist', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  const invalid = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { unknownSecret: 'please save', musicVolume: 80 });
+  assert.equal(invalid.status, 400);
+  const oversized = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { leaveMessage: 'x'.repeat(33_000) });
+  assert.equal(oversized.status, 413);
+  assert.equal(fixture.store.getSettings(GUILD).musicVolume, 50);
+});
+
+test('logout requires CSRF and invalidates the server-side session', async (t) => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  const denied = await fixture.request('/auth/logout', { method: 'POST', headers: { Cookie: session.cookie } });
+  assert.equal(denied.status, 403);
+  const valid = await fixture.request('/auth/logout', {
+    method: 'POST', headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf },
+  });
+  assert.equal(valid.status, 200);
+  assert.match(valid.headers.getSetCookie()[0], /Max-Age=0/u);
+  assert.equal((await fixture.request('/api/me', { headers: { Cookie: session.cookie } })).status, 401);
+});
+
+test('public assets and API responses expose no configured or OAuth credentials', async (t) => {
+  const fixture = await setup(t);
+  for (const path of ['/', '/app.js', '/styles.css', '/api/status']) {
+    const response = await fixture.request(path);
+    assert.equal(response.status, 200);
+    noSecrets(await response.text());
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(response.headers.get('x-frame-options'), 'DENY');
+    assert.match(response.headers.get('content-security-policy'), /script-src 'self'/u);
+  }
+  const session = await fixture.login();
+  for (const path of ['/api/me', `/api/guilds/${GUILD}`, `/api/guilds/${GUILD}/logs`, `/api/guilds/${GUILD}/music`]) {
+    const response = await fixture.request(path, { headers: { Cookie: session.cookie } });
+    assert.equal(response.status, 200);
+    noSecrets(await response.text());
+  }
+  assert.equal((await fixture.request('/.env', { headers: { Cookie: session.cookie } })).status, 404);
+  assert.equal((await fixture.request('/src/config.js', { headers: { Cookie: session.cookie } })).status, 404);
+});
+
+test('missing OAuth configuration keeps the public dashboard available and login closed', async (t) => {
+  const fixture = await setup(t, { clientSecret: '', sessionSecret: '' });
+  const status = await fixture.request('/api/status');
+  assert.equal((await status.json()).loginConfigured, false);
+  assert.equal((await fixture.request('/')).status, 200);
+  assert.equal((await fixture.request('/auth/login')).status, 503);
+  assert.equal(fixture.calls.discord.length, 0);
+});

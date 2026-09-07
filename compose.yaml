@@ -1,0 +1,54 @@
+services:
+  pit-stop:
+    build: .
+    image: pit-stop:local
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${PIT_STOP_ENV_FILE:-/etc/pit-stop/pit-stop.env}
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /app/data
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: "3001"
+      LAVALINK_HOST: lavalink
+      LAVALINK_PORT: "2333"
+      LAVALINK_SECURE: "false"
+    ports:
+      - 127.0.0.1:${PIT_STOP_DASHBOARD_PORT:-3001}:3001
+    volumes:
+      - pit-stop-data:/app/data
+    depends_on:
+      lavalink:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4.2.2
+    restart: unless-stopped
+    env_file:
+      - ${PIT_STOP_ENV_FILE:-/etc/pit-stop/pit-stop.env}
+    volumes:
+      - ./deploy/lavalink.yml:/opt/Lavalink/application.yml:ro
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  pit-stop-data:

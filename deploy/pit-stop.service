@@ -1,0 +1,44 @@
+[Unit]
+Description=Pit-Stop Discord Bot
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pit-stop
+Group=pit-stop
+WorkingDirectory=/opt/pit-stop/current
+Environment=NODE_ENV=production
+Environment=DATA_DIR=/var/lib/pit-stop
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/pit-stop/pit-stop.env
+StateDirectory=pit-stop
+StateDirectoryMode=0750
+ExecStart=/usr/bin/env node --env-file-if-exists=.env src/index.js
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pit-stop
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

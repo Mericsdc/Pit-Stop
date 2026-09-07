@@ -1,0 +1,7 @@
+# Set DOMAIN to the DNS name pointing to this server, then load this file in Caddy.
+# Example: DOMAIN=pit-stop.example.com caddy run --config /path/to/Caddyfile
+# Set PUBLIC_URL=https://your-domain in /etc/pit-stop/pit-stop.env and restart the bot.
+{$DOMAIN} {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3001
+}

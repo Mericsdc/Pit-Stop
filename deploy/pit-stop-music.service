@@ -1,0 +1,40 @@
+[Unit]
+Description=Pit-Stop Lavalink Music Service
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pit-stop-music
+Group=pit-stop-music
+WorkingDirectory=/var/lib/pit-stop-music
+StateDirectory=pit-stop-music
+StateDirectoryMode=0750
+EnvironmentFile=/etc/pit-stop-music/pit-stop-music.env
+ExecStart=/usr/bin/java -Xms128m -Xmx512m -jar /opt/pit-stop-music/Lavalink.jar --spring.config.location=file:/opt/pit-stop-music/application.yml --server.address=127.0.0.1
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pit-stop-music
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
