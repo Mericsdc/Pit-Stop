@@ -138,7 +138,7 @@ install -o root -g root -m 0644 "$source_dir/deploy/pit-stop.service" "$unit_pat
 ln -sfn -- "$release_dir" "$app_root/.current-next"
 mv -Tf -- "$app_root/.current-next" "$current_link"
 systemctl daemon-reload
-systemctl reset-failed pit-stop.service
+systemctl reset-failed pit-stop.service 2>/dev/null || true
 systemctl start pit-stop.service
 
 healthy=0
