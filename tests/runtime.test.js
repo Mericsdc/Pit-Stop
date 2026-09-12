@@ -283,3 +283,12 @@ test('registration propagates Discord failures and stops before advertising succ
   await assert.rejects(() => registerCommands({ post: async (route) => { calls.push(route); throw failure; } }, { clientId: CLIENT }, [registrationCommand('ping'), registrationCommand('yardim')]), (error) => error === failure);
   assert.equal(calls.length, 1);
 });
+
+test('unchanged command definitions avoid Discord write rate limits on restart', async () => {
+  const owned = registrationCommand('ping');
+  let writes = 0;
+  const rest = { get: async () => [{ ...owned.data.toJSON(), id: 'remote', version: 'version', type: 1, nsfw: false, options: [], description_localizations: null }], post: async () => { writes++; } };
+  await registerCommands(rest, { clientId: CLIENT }, [owned]); assert.equal(writes, 0);
+  rest.get = async () => [{ ...owned.data.toJSON(), description: 'Old description' }];
+  await registerCommands(rest, { clientId: CLIENT }, [owned]); assert.equal(writes, 1);
+});

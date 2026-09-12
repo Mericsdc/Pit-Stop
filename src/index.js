@@ -110,9 +110,9 @@ try {
     log('error', 'application_id_mismatch');
     await shutdown(1, 'application_id_mismatch');
   } else if (!stopping) {
+    await client.login(config.token);
     const count = await registerCommands(rest, config, allCommands);
     log('info', 'commands_registered', { count, scope: config.guildId ? 'guild' : 'global' });
-    if (!stopping) await client.login(config.token);
   }
 } catch (error) {
   log('error', 'startup_failed', safeError(error));
