@@ -35,7 +35,7 @@ export function createInteractionHandler(commands, { logger = () => {}, now = Da
       cooldowns.set(key, timestamp + cooldownMs);
       await command.execute(interaction);
       try {
-        store?.addLog(interaction.guildId, { type: 'command.executed', actorId: interaction.user.id, message: `/${interaction.commandName} komutu işlendi.`, details: { channelId: interaction.channelId } });
+        store?.addLog(interaction.guildId, { type: 'command.executed', actorId: interaction.user.id, message: `/${interaction.commandName} komutu işlendi.`, details: { ...(interaction.user.username ? { actorName: interaction.user.globalName || interaction.user.username } : {}), channelId: interaction.channelId } });
       } catch (error) { logger('error', 'command_log_failed', safeError(error)); }
     } catch (error) {
       logger('error', 'command_failed', { command: interaction.commandName, ...safeError(error) });

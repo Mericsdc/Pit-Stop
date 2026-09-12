@@ -8,6 +8,7 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
+import { rememberCommandDeletion } from './deletion-audit.js';
 
 const BRAND_COLOR = 0xf45132;
 const DELETE_PERMISSIONS = PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ReadMessageHistory;
@@ -96,6 +97,9 @@ export const commands = [
       '**/play sarki** — Şarkı adı, YouTube / YouTube Music veya Spotify bağlantısıyla müzik başlatır.',
       '**/pause**, **/resume**, **/skip**, **/stop**, **/queue**, **/volume seviye** — Müzik kontrolleri. Önce botla aynı ses kanalına katıl.',
       '**!özelkomut** — Panelde tanımlanan otomatik cevapları çağırır. Ayrılma mesajları, otomatik rol, cevaplar ve müzik ayarları yönetim panelinden düzenlenir.',
+      '**/hatırlat not:2 saat sonra NFS turnuvası var** — DM veya kanal hatırlatması. **/hatırlatıcılar** ile listele/iptal et.',
+      '**/sağlık-asistanı durum:aç** — Kişisel mola hatırlatmaları.',
+      '**/uyar**, **/bilet-kapat**, **/savunma-yanıt** — Yetkili destek ve savunma işlemleri.',
     ].join('\n\n'));
   }),
 
@@ -197,7 +201,10 @@ export const commands = [
       && message.system === false && message.deletable === true
       && Number.isFinite(message.createdTimestamp) && message.createdTimestamp > cutoff);
     // Pass explicit messages, never a count, so protected messages cannot be selected again.
-    const deleted = eligible.size > 0 ? await channel.bulkDelete(eligible, true) : null;
+    const forgetDeletion = rememberCommandDeletion(interaction.client, [...eligible.keys()], interaction.user);
+    let deleted;
+    try { deleted = eligible.size > 0 ? await channel.bulkDelete(eligible, true) : null; }
+    catch (error) { forgetDeletion(); throw error; }
     const deletedCount = deleted?.size ?? deleted?.length ?? 0;
 
     return interaction.editReply({

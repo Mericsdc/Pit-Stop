@@ -151,7 +151,7 @@ test('responders enforce user and guild cooldowns and recover after expiry', asy
   assert.equal(fixture.sent.length, 2);
 });
 
-test('message edit/delete logs contain only metadata and never imply a known deletion actor', async (t) => {
+test('message edits do not create logs and unavailable deletion actors are not guessed', async (t) => {
   const fixture = setup(t);
   const secretContent = 'This message body must never be stored';
   const previous = incoming(fixture, secretContent, { editedTimestamp: null });
@@ -160,7 +160,7 @@ test('message edit/delete logs contain only metadata and never imply a known del
   await fixture.emit(Events.MessageDelete, previous);
   await fixture.emit(Events.MessageBulkDelete, new Collection([[previous.id, previous]]), fixture.channel);
   const logs = fixture.store.getLogs(GUILD);
-  assert.deepEqual(logs.map(({ type }) => type), ['message.bulk_delete', 'message.delete', 'message.update']);
+  assert.deepEqual(logs.map(({ type }) => type), ['message.bulk_delete', 'message.delete']);
   assert.equal(logs[1].actorId, null);
   assert.equal(logs[1].details.authorId, USER);
   assert.equal(JSON.stringify(logs).includes(secretContent), false);

@@ -3,6 +3,10 @@
 server:
   address: 0.0.0.0
   port: 2333
+spring:
+  cloud:
+    config:
+      enabled: false
 lavalink:
   plugins:
     - dependency: dev.lavalink.youtube:youtube-plugin:1.18.2
@@ -34,8 +38,18 @@ plugins:
     clients:
       - MUSIC
       - ANDROID_VR
+      - IOS
+      - TVHTML5_SIMPLY
       - WEB
       - WEBEMBEDDED
+      - TV
+    oauth:
+      enabled: ${YOUTUBE_OAUTH_ENABLED:false}
+      refreshToken: ${YOUTUBE_REFRESH_TOKEN:}
+      skipInitialization: ${YOUTUBE_SKIP_INITIALIZATION:true}
+    pot:
+      token: ${YOUTUBE_PO_TOKEN:}
+      visitorData: ${YOUTUBE_VISITOR_DATA:}
   lavasrc:
     # Spotify resolves metadata only. Audio is matched through registered YouTube sources.
     providers:

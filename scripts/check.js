@@ -15,8 +15,9 @@ for (const directory of ['src', 'scripts', 'tests', 'public']) {
 const { commands } = await import('../src/commands.js');
 const { createMusic } = await import('../src/music.js');
 const music = createMusic({}, { getSettings: () => ({}) });
+const { createFeatures } = await import('../src/features.js');
 const names = new Set();
-for (const command of [...commands, ...music.commands]) {
+for (const command of [...commands, ...music.commands, ...createFeatures({}, {}).commands]) {
   const payload = command.data.toJSON();
   if (names.has(payload.name)) throw new Error(`Duplicate command: ${payload.name}`);
   names.add(payload.name);

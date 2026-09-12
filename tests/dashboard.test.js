@@ -140,7 +140,7 @@ test('OAuth HTTP flow issues protected state/session cookies and supports first-
   assert.notEqual(session.target.searchParams.get('prompt'), 'none');
   assert.ok(session.state.length >= 32);
   for (const attribute of ['HttpOnly', 'SameSite=Lax', 'Secure']) assert.ok(session.sessionCookie.includes(attribute));
-  assert.deepEqual(Object.keys(session.me).sort(), ['csrf', 'user']);
+  assert.deepEqual(Object.keys(session.me).sort(), ['csrf', 'installationOwner', 'user']);
   assert.equal(session.me.user.id, USER);
   noSecrets(JSON.stringify(session.me));
 });

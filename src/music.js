@@ -72,6 +72,10 @@ export function assertVoiceAccess(member, botMember, player, settings = {}, { re
   if (channel.type !== ChannelType.GuildVoice) throw new MusicError('Müzik için normal bir ses kanalı kullanın. Sahne kanalları desteklenmiyor.');
   const botChannelId = player?.voiceChannelId || botMember?.voice?.channelId;
   if (botChannelId && channel.id !== botChannelId) throw new MusicError('Bot ile aynı ses kanalında olmalısınız.', 403);
+  if (settings.musicRestricted && !member.permissions.has(PermissionFlagsBits.ManageGuild)
+    && !(settings.musicControllerUserIds || []).includes(member.id)
+    && !(settings.musicControllerRoleIds || []).some(id => member.roles.cache.has(id))
+    && !(settings.djRoleId && member.roles.cache.has(settings.djRoleId))) throw new MusicError('Müzik ve botun ses bağlantısı yalnızca panelde belirlenen yetkililer tarafından yönetilebilir.', 403);
   if (requireDj && settings.djRoleId && !member.roles.cache.has(settings.djRoleId)
     && !member.permissions.has(PermissionFlagsBits.ManageGuild)) {
     throw new MusicError('Bu sunucuda müzik yönetimi için DJ rolü gerekiyor.', 403);
@@ -205,7 +209,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
       message = `${selected.tracks.length} parça kuyruğa eklendi: ${escapeMarkdown(String(selected.tracks[0].info?.title || 'İsimsiz parça').slice(0, 160))}.`;
       if (selected.truncated) message += ` İstek başına ${MAX_PLAYLIST}, toplam ${MAX_QUEUE} parça sınırı uygulandı.`;
       if (query.spotify) message += ` ${SPOTIFY_NOTE}`;
-      record(guildId, 'music', message, actorId, { action, added: selected.tracks.length });
+      record(guildId, 'music', message, actorId, { action, actorName: member.displayName || member.user.username, query: options.query, channelId: options.textChannelId || null, voiceChannelId: channel.id, added: selected.tracks.length, tracks: selected.tracks.slice(0, 10).map(track => ({ title: String(track.info?.title || '').slice(0, 120), url: track.info?.uri })) });
     } else {
       if (!player) throw new MusicError('Etkin bir müzik oturumu yok. /play ile başlayın.');
       if (action === 'pause') {
@@ -254,7 +258,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
     });
     manager.on('trackError', (player, track) => {
       const message = `Parça çalınamadı: ${String(track?.info?.title || 'İsimsiz parça').slice(0, 180)}. Kaynak erişimi kısıtlı olabilir; sıradaki parçaya geçiliyor.`;
-      record(player.guildId, 'music_error', message);
+      record(player.guildId, 'music_error', message, track?.requester?.id, { actorName: track?.requester?.username, track: track?.info?.title, url: track?.info?.uri });
       const textChannel = client.channels?.cache.get(player.textChannelId);
       if (textChannel?.isTextBased()) textChannel.send({ content: message, allowedMentions: { parse: [] } }).catch(error => failLog('music_notice_failed', error));
     });

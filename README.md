@@ -4,12 +4,13 @@
 
 Türkçe Discord botu ve Discord ile giriş yapılan yönetim paneli. Node.js 24, discord.js 14, SQLite ve Lavalink kullanır.
 
-- Ayrılan üyeler için kanal ve mesaj şablonu; katılan insan üyelere otomatik rol.
+- Ayrılan üyeler için kanal ve mesaj şablonu; katılan insan üyelere birden fazla otomatik rol.
 - Panelden tanımlanan `!komut` cevapları; büyük/küçük harf duyarsız tam eşleşme.
 - Yetki kontrollü `/clear` ve `/temizle`; sabitlenmiş, sistem ve 14 günden eski mesajları korur.
-- Üye, rol, zaman aşımı, mesaj düzenleme/silme, komut, ayar ve müzik kayıtları.
+- Kullanıcı/yetkili adı, kimlik, tarih-saat ve işlem ayrıntılarıyla kayıtlar. Yeni mesaj düzenleme logu üretilmez.
 - YouTube / YouTube Music araması, YouTube ve Spotify bağlantıları, kuyruk, ses, DJ rolü.
-- Sunucu başına kalıcı ayarlar, son 30 gün / en fazla 10.000 olay. Mesaj içerikleri ve bot token’ları loglanmaz.
+- Kalıcı hatırlatıcılar, isteğe bağlı sağlık asistanı, spam/phishing koruması, özel destek ve savunma odaları, yönetilebilir üye blacklist’i.
+- Sunucu başına kalıcı ayarlar, son 30 gün / en fazla 10.000 olay. Otomatik cevap, koruma ve özel oda kayıtları ilgili mesaj içeriğini içerir; bot token’ları loglanmaz.
 
 ## Web sitesi ve canlı panel
 
@@ -22,7 +23,7 @@ Depoda **Settings → Pages → Source: GitHub Actions** seçin. Sunucu HTTPS il
 ## Discord kurulumu
 
 1. [Developer Portal](https://discord.com/developers/applications) üzerinden Pit-Stop uygulamasını açın.
-2. **Bot** sayfasında `Server Members Intent` ve `Message Content Intent` açın. Presence Intent gerekmez. Bot token’ı yalnızca oluşturulurken görünür; gerekiyorsa hesabın sahibi yeni token oluşturur.
+2. **Bot** sayfasında `Server Members Intent` ve `Message Content Intent` açın. Oyun süresi takibi için ayrıca `Presence Intent` ve `PRESENCE_ENABLED=true` gerekir. Bot token’ı yalnızca oluşturulurken görünür; gerekiyorsa hesabın sahibi yeni token oluşturur.
 3. `.env.example` dosyasını `.env` olarak kopyalayın. `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` ve panel için `DISCORD_CLIENT_SECRET` alanlarını doldurun. `SESSION_SECRET` üretin:
 
    ```sh
@@ -112,11 +113,29 @@ YouTube bazı sunucu IP’lerinde oturum/istek doğrulaması isteyebilir. Gereki
 | `/pause`, `/resume`, `/skip`, `/stop` | Müzik kontrolleri |
 | `/queue`, `/volume` | Kuyruk ve ses |
 | `!özelkomut` | Panelden tanımlanan cevap |
+| `/hatırlat not:2 saat sonra NFS turnuvası var hedef:DM` | Kalıcı zamanlı bildirim |
+| `/hatırlatıcılar [iptal:kimlik]` | Kişisel liste ve iptal |
+| `/sağlık-asistanı durum:aç [hedef:DM]` | Kişisel mola hatırlatmaları |
+| `/bilet-kapat` | Destek talebini kapat, kanalı koru |
+| `/uyar üye:... sebep:...` | Yetkili uyarısı ve özel savunma |
+| `/savunma-yanıt mesaj:...` | Yetkiliden üyeye bot DM yanıtı |
+
+## Topluluk araçları ve izinler
+
+Panelin Spam & phishing, Destek & savunma, Hatırlatıcı & sağlık, Üye blacklist ve Yetkilendirme bölümlerinden ayarlanır. Hatırlatıcılar 15 saniyede bir kontrol edilir, yeniden başlatmada korunur; DM kapalıysa üç denemeden sonra hata kaydı kalır. Sağlık asistanı yalnızca `/sağlık-asistanı` ile katılan kullanıcıları izler; kesintisiz ses veya oyun oturumu kullanılır, ekran etkinliği ölçülmez. Yeniden başlatma süreyi sıfırlar. Selamlama tarayıcının saat dilimini kullanır; konum izni/IP konum hizmeti kullanmaz.
+
+Phishing alan adları [Discord-AntiScam](https://github.com/Discord-AntiScam/scam-links) listesinden 15 dakikada bir alınır ve yerel önbellekte tutulur. Bağlantılara istek gönderilmez; alan adı/alt alan adı karşılaştırılır. Listede olmayan saldırılar tespit edilmeyebilir. Discord ağ ve hız sınırları nedeniyle milisaniyelik silme garantisi yoktur. Botun Mesajları Yönet ve Üyeleri Zamanaşımına Uğrat izinleri ile hedef üyeden yüksek rolü gerekir. Phishing timeout süresi 12 saat, spam varsayılanı 10 dakikadır. Spam için aynı mesajın 3 saniyede 5 kez gelmesi gerekir.
+
+Destek kanalları kullanıcı, destek rolü ve bot için izinlerle oluşturulur; @everyone görüntülemesi engellenir. Yönetici yetkisi olanlar Discord gereği görebilir. Savunmalar özel thread’dir; Thread Yönet izni olanlar erişebilir. Discord timeout’u tüm kanallarda yazmayı engellediğinden susturulan kişi botun DM düğmesiyle savunma gönderir; timeout kaldırılmaz. DM kapalıysa bu yol çalışmaz. Botun Kanalları Yönet, Özel Thread Oluştur, Thread Yönet, Thread İçinde Mesaj Gönder izinleri gerekir.
+
+Mesaj silmede yazar ile silen kişi ayrıdır. `/clear` ve `/temizle` doğrudan komutu kullanan yetkiliyi kaydeder. Elle silmeler Denetim Kaydını Görüntüle izniyle kanal/yazar/zaman/adet üzerinden eşleştirilir. Birden fazla yetkili eşleşirse veya Discord kayıt üretmezse kimlik tahmin edilmez. Kişinin kendi mesajını silmesi denetim kaydına girmez. Eski mesaj düzenleme kayıtları 30 günlük saklama süresi dolana kadar kalabilir; yenileri üretilmez.
+
+`ALLOWED_GUILD_IDS` izinli sunucuları, `BOT_OWNER_IDS` panelde listeyi değiştirebilen uygulama sahibini belirler. Genel kurulumu kapatmak için Installation → Install Link: None ve Bot → Public Bot: kapalı olmalıdır. Özel botu Discord uygulama sahibi/ekibi kurabilir. Ses/müzik kontrolü panelde rol/kullanıcı listesiyle sınırlıdır. Discord’un yerel sağ tık → Taşı eylemi sunucudaki Üyeleri Taşı iznine bağlıdır.
 
 ## Doğrulama ve veri
 
 `npm test` HTTP OAuth2/CSRF akışı, yetki iptali, rol hiyerarşisi, sunucu izolasyonu, SQLite kalıcılığı, olaylar, mesaj temizleme ve müzik doğrulama testlerini çalıştırır. CI ayrıca Docker imajı oluşturur. Bu testler gerçek Discord/YouTube hesabıyla canlı müzik testi yerine geçmez.
 
-`.env`, veri tabanları, özel anahtarlar ve `node_modules` Git’e alınmaz. Bot mesajları kendiliğinden @everyone/rol/kullanıcı ping’i üretmez. Oturum çerezleri HttpOnly/SameSite; dışarıya açık panelde HTTPS zorunludur. Loglar olaydan sonra tutulur; bot kapalıyken geçmiş olaylar geriye dönük oluşturulmaz. Mesaj silen moderatör audit log alınmadan tahmin edilmez.
+`.env`, veri tabanları, özel anahtarlar ve `node_modules` Git’e alınmaz. @everyone ve rol ping’leri bastırılır; kanalda hatırlatma isteyen kullanıcı kendi bildirimiyle etiketlenir. Oturum çerezleri HttpOnly/SameSite; dışarıya açık panelde HTTPS zorunludur. Loglar olaydan sonra tutulur; bot kapalıyken geçmiş olaylar geriye dönük oluşturulmaz. Mesaj silen moderatör audit log alınmadan tahmin edilmez.
 
 Yedek için botu kısa süre durdurup tüm `DATA_DIR` dizinini özel bir konuma kopyalayın; SQLite WAL dosyaları bulunabileceği için çalışan veritabanının yalnızca ana dosyasını kopyalamayın. `.env` yedeklerini depo dışında, özel saklayın.

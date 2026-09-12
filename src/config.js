@@ -28,6 +28,9 @@ export function readConfig(env = process.env) {
   if (lavalinkHost && !lavalinkPassword) throw new Error('LAVALINK_HOST için LAVALINK_PASSWORD gerekli.');
   return {
     token, clientId, guildId, healthPort, dashboardPort,
+    presenceEnabled: env.PRESENCE_ENABLED === 'true',
+    allowedGuildIds: (env.ALLOWED_GUILD_IDS || '').split(',').map(id => id.trim()).filter(Boolean).map(id => readSnowflake(id, 'ALLOWED_GUILD_IDS')),
+    ownerIds: (env.BOT_OWNER_IDS || '').split(',').map(id => id.trim()).filter(Boolean).map(id => readSnowflake(id, 'BOT_OWNER_IDS')),
     dashboardHost: env.DASHBOARD_HOST?.trim() || '127.0.0.1',
     publicUrl: url.origin, clientSecret, sessionSecret,
     dataDir: resolve(env.DATA_DIR?.trim() || './data'),

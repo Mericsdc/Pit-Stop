@@ -1,4 +1,6 @@
 import { ChannelType, EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js';
+import { userLabel } from './audit.js';
+import { createDeletionAudit, commandDeletionActor } from './deletion-audit.js';
 
 const NO_MENTIONS = Object.freeze({ parse: [], repliedUser: false });
 const RESPONDER_USER_COOLDOWN_MS = 5_000;
@@ -10,7 +12,7 @@ function branded(title, description) {
     .setColor(0xf45132)
     .setTitle(`Pit-Stop • ${title}`)
     .setDescription(description.slice(0, 3900))
-    .setFooter({ text: 'Pit-Stop | Sunucunun mola noktası' });
+    .setFooter({ text: 'Pit-Stop | Sunucunun mola noktası' }).setTimestamp();
 }
 
 function safeCode(error) {
@@ -27,7 +29,7 @@ function remember(map, key, deadline) {
   map.set(key, deadline);
 }
 
-export function installCommunityHandlers(client, store, { logger = () => {} } = {}) {
+export function installCommunityHandlers(client, store, { logger = () => {}, deletionAudit = createDeletionAudit() } = {}) {
   const listeners = [];
   const userCooldowns = new Map();
   const guildCooldowns = new Map();
@@ -88,35 +90,40 @@ export function installCommunityHandlers(client, store, { logger = () => {} } = 
   on(Events.GuildMemberAdd, async (member) => {
     await record(member.guild, {
       type: 'member.join', actorId: member.id,
-      message: 'Bir üye sunucuya katıldı.', details: { memberId: member.id },
+      message: `${userLabel(member)} sunucuya katıldı.`, details: { memberId: member.id, memberName: userLabel(member), actorName: userLabel(member) },
     });
     const settings = store.getSettings(member.guild.id);
-    if (!settings.autoRoleEnabled || !settings.autoRoleId || member.user.bot) return;
-
-    const role = await member.guild.roles.fetch(settings.autoRoleId);
+    const roleIds = settings.autoRoleIds?.length ? settings.autoRoleIds : settings.autoRoleId ? [settings.autoRoleId] : [];
+    if (!settings.autoRoleEnabled || !roleIds.length || member.user.bot) return;
+    for (const roleId of roleIds) {
+    const role = await member.guild.roles.fetch(roleId);
     const botMember = member.guild.members.me ?? await member.guild.members.fetchMe();
     if (!role || role.id === member.guild.id || role.managed || !role.editable
       || !botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
       await record(member.guild, {
         type: 'autorole.error', actorId: member.id,
         message: 'Otomatik rol verilemedi: rol ve bot hiyerarşisini, Rol Yönet iznini kontrol et.',
-        details: { memberId: member.id, roleId: settings.autoRoleId },
+        details: { memberId: member.id, memberName: userLabel(member), roleId },
       });
-      return;
+      continue;
     }
     await member.roles.add(role, 'Pit-Stop otomatik katılım rolü');
     await record(member.guild, {
       type: 'autorole.assigned', actorId: member.id,
-      message: 'Yeni üyeye otomatik rol verildi.', details: { memberId: member.id, roleId: role.id },
+      message: `${userLabel(member)} üyesine ${role.name || role.id} rolü verildi.`, details: { memberId: member.id, memberName: userLabel(member), roleId: role.id, roleName: role.name },
     });
+    }
   });
 
   on(Events.GuildMemberRemove, async (member) => {
     await record(member.guild, {
       type: 'member.leave', actorId: member.id,
-      message: 'Bir üye sunucudan ayrıldı.', details: { memberId: member.id },
+      message: `${userLabel(member)} sunucudan ayrıldı.`, details: { memberId: member.id, memberName: userLabel(member), actorName: userLabel(member) },
     });
     const settings = store.getSettings(member.guild.id);
+    if (settings.blacklistOnLeave && !member.user?.bot && store.putRecord) {
+      store.putRecord(member.guild.id, 'blacklist', member.id, { name: userLabel(member), reason: 'Sunucudan ayrıldı', source: 'leave', createdAt: Date.now(), addedBy: client.user?.id });
+    }
     if (!settings.leaveEnabled || !settings.leaveChannelId) return;
     const channel = await member.guild.channels.fetch(settings.leaveChannelId);
     if (!channel || channel.guildId !== member.guild.id
@@ -158,37 +165,31 @@ export function installCommunityHandlers(client, store, { logger = () => {} } = 
     });
     await record(message.guild, {
       type: 'responder.sent', actorId: message.author.id,
-      message: 'Otomatik yanıt gönderildi.', details: { channelId: message.channelId, trigger: response.trigger },
+      message: `${userLabel(message.author)} için !${response.trigger} yanıtı gönderildi.`, details: { actorName: userLabel(message.author), channelId: message.channelId, trigger: response.trigger, input: message.content.slice(0, 100), reply: response.reply },
     });
   });
 
-  on(Events.MessageUpdate, async (previous, current) => {
-    if (!current.guild || current.author?.id === client.user?.id) return;
-    // Embed hydration, pin changes, and partial events are not message edits.
-    if (!current.editedTimestamp || current.editedTimestamp === previous.editedTimestamp) return;
-    await record(current.guild, {
-      type: 'message.update', actorId: current.author?.id ?? null,
-      message: 'Bir mesaj düzenlendi. Mesaj içeriği kaydedilmedi.',
-      details: { messageId: current.id, channelId: current.channelId },
-    });
+  on(Events.ClientReady, async () => {
+    for (const guild of client.guilds?.cache.values() || []) await deletionAudit.prime(guild);
   });
 
   on(Events.MessageDelete, async (message) => {
-    if (!message.guild || (message.author?.id && message.author.id === client.user?.id)) return;
+    if (!message.guild) return;
+    const actor = commandDeletionActor(client, [message.id]) || await deletionAudit.resolve(message.guild, { channelId: message.channelId, authorId: message.author?.id });
     await record(message.guild, {
-      // The gateway identifies the author, not the person who deleted the message.
-      type: 'message.delete', actorId: null,
-      message: 'Bir mesaj silindi. Mesaj içeriği kaydedilmedi.',
-      details: { messageId: message.id, channelId: message.channelId, authorId: message.author?.id ?? null },
+      type: 'message.delete', actorId: actor.actorId,
+      message: actor.actorId ? `${actor.actorName}, ${userLabel(message.author)} kullanıcısının mesajını sildi.` : 'Bir mesaj silindi; silen kişi Discord tarafından bildirilmedi.',
+      details: { ...actor, messageId: message.id, channelId: message.channelId, authorId: message.author?.id ?? null, authorName: userLabel(message.author) },
     });
   });
 
   on(Events.MessageBulkDelete, async (messages, channel) => {
     if (!channel.guild) return;
+    const actor = commandDeletionActor(client, [...messages.keys()]) || await deletionAudit.resolve(channel.guild, { channelId: channel.id, count: messages.size, bulk: true });
     await record(channel.guild, {
-      type: 'message.bulk_delete', actorId: null,
-      message: `${messages.size} mesaj toplu olarak silindi. Mesaj içerikleri kaydedilmedi.`,
-      details: { channelId: channel.id, count: messages.size },
+      type: 'message.bulk_delete', actorId: actor.actorId,
+      message: actor.actorId ? `${actor.actorName}, ${messages.size} mesajı toplu olarak sildi.` : `${messages.size} mesaj toplu olarak silindi; silen kişi Discord tarafından bildirilmedi.`,
+      details: { ...actor, channelId: channel.id, count: messages.size },
     });
   });
 

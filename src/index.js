@@ -11,6 +11,8 @@ import { createStore } from './store.js';
 import { installCommunityHandlers } from './community.js';
 import { createMusic } from './music.js';
 import { createDashboard } from './dashboard.js';
+import { createFeatures } from './features.js';
+import { installAuditIdentity } from './audit.js';
 
 let config;
 try {
@@ -21,7 +23,7 @@ try {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildVoiceStates],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildModeration, ...(config.presenceEnabled ? [GatewayIntentBits.GuildPresences] : [])],
   partials: [Partials.Message, Partials.Channel],
   allowedMentions: { parse: [], repliedUser: false },
   presence: { activities: [{ name: '/yardim • Pit-Stop', type: ActivityType.Playing }], status: 'online' },
@@ -29,10 +31,13 @@ const client = new Client({
 const health = createHealthServer(() => client.isReady());
 mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
 const store = createStore(join(config.dataDir, 'pit-stop.sqlite'));
+installAuditIdentity(client, store);
 const music = createMusic(client, store, config, { logger: log });
-const allCommands = [...commands, ...music.commands];
+const features = createFeatures(client, store, config, { logger: log });
+features.install();
+const allCommands = [...commands, ...music.commands, ...features.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
-const dashboard = createDashboard({ client, store, music, config, logger: log });
+const dashboard = createDashboard({ client, store, music, features, config, logger: log });
 let stopping = false;
 let disconnectedAt;
 
@@ -44,6 +49,7 @@ async function shutdown(code, reason) {
   const deadline = setTimeout(() => process.exit(code), 5000);
   deadline.unref();
   removeCommunityHandlers();
+  features.close();
   await music.close();
   await client.destroy();
   for (const server of [health, dashboard]) {
@@ -70,6 +76,7 @@ watchdog.unref();
 client.once(Events.ClientReady, readyClient => {
   log('info', 'ready', { bot: readyClient.user.tag, guilds: readyClient.guilds.cache.size });
   void music.initialize().catch(error => log('error', 'music_initialize_failed', safeError(error)));
+  void features.initialize().catch(error => log('error', 'features_initialize_failed', safeError(error)));
 });
 client.on(Events.Raw, payload => music.handleRaw(payload));
 client.on(Events.InteractionCreate, createInteractionHandler(allCommands, { logger: log, store }));
