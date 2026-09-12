@@ -287,6 +287,24 @@ test('invalid settings and oversized bodies do not persist', async (t) => {
   assert.equal(fixture.store.getSettings(GUILD).musicVolume, 50);
 });
 
+test('defense parent rejects announcement channels that cannot host private threads', async (t) => {
+  const fixture = await setup(t);
+  fixture.channel.type = ChannelType.GuildAnnouncement;
+  await assert.rejects(() => validateGuildSettings(fixture.guild, fixture.member, { defenseChannelId: CHANNEL }), { status: 400 });
+});
+
+test('settings audit safely records long escaped response changes', async (t) => {
+  const fixture = await setup(t), session = await fixture.login();
+  for (const reply of ['"'.repeat(1750), '\\'.repeat(1750)]) {
+    const response = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { responses: [{ trigger: 'test', reply }] });
+    assert.equal(response.status, 200);
+    assert.equal(fixture.store.getSettings(GUILD).responses[0].reply, reply);
+    const detail = fixture.store.getLogs(GUILD, { type: 'settings.detail' })[0];
+    assert.ok(JSON.stringify(detail.details).length <= 4000);
+    assert.equal(detail.actorId, USER);
+  }
+});
+
 test('logout requires CSRF and invalidates the server-side session', async (t) => {
   const fixture = await setup(t);
   const session = await fixture.login();

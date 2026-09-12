@@ -48,6 +48,7 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
   for (const key of ['leaveChannelId', 'logChannelId', 'ticketChannelId', 'defenseChannelId']) {
     if (!patch[key]) continue;
     const channel = await guild.channels.fetch(patch[key]);
+    if (key === 'defenseChannelId' && channel?.type !== ChannelType.GuildText) throw httpError(400, 'Özel savunma thread’leri için normal bir metin kanalı seçin.');
     if (!channel || channel.guildId !== guild.id || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)
       || !channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)
       || !channel.permissionsFor(guild.members.me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
@@ -238,7 +239,11 @@ export function createDashboard({ client, store, music, features, config, logger
         catch (error) { throw httpError(400, error.message); }
         store.addLog(guildId, { type: 'settings.updated', actorId: session.user.id, message: `${session.user.name} bot ayarlarını güncelledi.`, details: { actorName: session.user.name, fields: Object.keys(patch) } });
         for (const key of Object.keys(patch)) if (JSON.stringify(previous[key]) !== JSON.stringify(settings[key])) {
-          const preview = value => JSON.stringify(value)?.slice(0, 1600);
+          const preview = value => {
+            let result = JSON.stringify(value) ?? '';
+            while (JSON.stringify(result).length > 1500) result = result.slice(0, Math.floor(result.length * 0.8));
+            return result;
+          };
           store.addLog(guildId, { type: 'settings.detail', actorId: session.user.id, message: `${session.user.name}: ${key} değiştirildi.`, details: { actorName: session.user.name, field: key, before: preview(previous[key]), after: preview(settings[key]) } });
         }
         await music.applySettings(guildId);
