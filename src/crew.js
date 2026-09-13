@@ -99,13 +99,19 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       const previous = store.getRecord(guildId, 'crew_current', 'current');
       const previousByName = new Map((previous?.members || []).map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       let profileFailures = 0;
-      const profiles = await mapLimit(roster, 4, async member => {
+      const profiles = await mapLimit(roster, 1, async member => {
         const old = previousByName.get(member.name.toLocaleLowerCase('en-US'));
-        try { return { ...member, ...normalizeProfile(await request('GetPlayerNext', [member.name]), member.name) }; }
-        catch { profileFailures++; return { ...member, lastLogin: old?.lastLogin || null, eventsCompleted: old?.eventsCompleted || 0, driverScore: old?.driverScore || 0, level: old?.level || 0 }; }
+        try { return { ...member, ...normalizeProfile(await request('GetPlayerNext', [member.name]), member.name), profileAvailable: true }; }
+        catch { profileFailures++; return { ...member, lastLogin: old?.lastLogin || null, eventsCompleted: old?.eventsCompleted || 0, driverScore: old?.driverScore || 0, level: old?.level || 0, profileAvailable: Boolean(old?.profileAvailable) }; }
       });
       const timestamp = now(), date = dayKey(timestamp), storedDay = store.getRecord(guildId, 'crew_daily', date);
-      const baseline = storedDay?.baseline || profiles.map(item => ({ name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore }));
+      const savedBaseline = storedDay?.baseline || [];
+      const savedByName = new Map(savedBaseline.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
+      const baseline = profiles.map(item => {
+        const saved = savedByName.get(item.name.toLocaleLowerCase('en-US'));
+        if (saved?.profileAvailable || !item.profileAvailable) return saved || { name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: false };
+        return { name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: true };
+      });
       const baselineByName = new Map(baseline.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       const members = profiles.map(item => {
         const base = baselineByName.get(item.name.toLocaleLowerCase('en-US')) || item;
