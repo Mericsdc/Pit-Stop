@@ -160,7 +160,7 @@ export function installCommunityHandlers(client, store, { logger = () => {}, del
     remember(userCooldowns, userKey, now + RESPONDER_USER_COOLDOWN_MS);
     remember(guildCooldowns, message.guild.id, now + RESPONDER_GUILD_COOLDOWN_MS);
     await message.reply({
-      embeds: [branded('Otomatik yanıt', response.reply)],
+      content: response.reply,
       allowedMentions: NO_MENTIONS,
     });
     await record(message.guild, {

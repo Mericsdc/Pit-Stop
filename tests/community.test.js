@@ -113,7 +113,8 @@ test('responders match exact Turkish commands and publish configured reply witho
   });
   await fixture.emit(Events.MessageCreate, incoming(fixture, '!YARIŞ'));
   assert.equal(fixture.sent.length, 1);
-  assert.equal(fixture.sent[0].embeds[0].toJSON().description, '@everyone Merhaba!');
+  assert.equal(fixture.sent[0].content, '@everyone Merhaba!');
+  assert.equal(fixture.sent[0].embeds, undefined);
   assert.deepEqual(fixture.sent[0].allowedMentions, { parse: [], repliedUser: false });
   assert.equal(fixture.store.getLogs(GUILD)[0].type, 'responder.sent');
 });

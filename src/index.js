@@ -13,6 +13,7 @@ import { createMusic } from './music.js';
 import { createDashboard } from './dashboard.js';
 import { createFeatures } from './features.js';
 import { installAuditIdentity } from './audit.js';
+import { createCrewTracker } from './crew.js';
 
 let config;
 try {
@@ -34,10 +35,11 @@ const store = createStore(join(config.dataDir, 'pit-stop.sqlite'));
 installAuditIdentity(client, store);
 const music = createMusic(client, store, config, { logger: log });
 const features = createFeatures(client, store, config, { logger: log });
+const crew = createCrewTracker(store, config, { logger: log });
 features.install();
 const allCommands = [...commands, ...music.commands, ...features.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
-const dashboard = createDashboard({ client, store, music, features, config, logger: log });
+const dashboard = createDashboard({ client, store, music, features, crew, config, logger: log });
 let stopping = false;
 let disconnectedAt;
 
@@ -50,6 +52,7 @@ async function shutdown(code, reason) {
   deadline.unref();
   removeCommunityHandlers();
   features.close();
+  crew.close();
   await music.close();
   await client.destroy();
   for (const server of [health, dashboard]) {
@@ -77,6 +80,7 @@ client.once(Events.ClientReady, readyClient => {
   log('info', 'ready', { bot: readyClient.user.tag, guilds: readyClient.guilds.cache.size });
   void music.initialize().catch(error => log('error', 'music_initialize_failed', safeError(error)));
   void features.initialize().catch(error => log('error', 'features_initialize_failed', safeError(error)));
+  void crew.initialize().catch(error => log('error', 'crew_initialize_failed', safeError(error)));
 });
 client.on(Events.Raw, payload => music.handleRaw(payload));
 client.on(Events.InteractionCreate, createInteractionHandler(allCommands, { logger: log, store }));

@@ -98,7 +98,7 @@ export const commands = [
       '**/pause**, **/resume**, **/skip**, **/stop**, **/queue**, **/volume seviye** — Müzik kontrolleri. Önce botla aynı ses kanalına katıl.',
       '**!özelkomut** — Panelde tanımlanan otomatik cevapları çağırır. Ayrılma mesajları, otomatik rol, cevaplar ve müzik ayarları yönetim panelinden düzenlenir.',
       '**/hatırlat not:2 saat sonra NFS turnuvası var** — DM veya kanal hatırlatması. **/hatırlatıcılar** ile listele/iptal et.',
-      '**/sağlık-asistanı durum:aç** — Kişisel mola hatırlatmaları.',
+      '**/healthcare durum:aç** — Kişisel mola hatırlatmaları.',
       '**/uyar**, **/bilet-kapat**, **/savunma-yanıt** — Yetkili destek ve savunma işlemleri.',
     ].join('\n\n'));
   }),

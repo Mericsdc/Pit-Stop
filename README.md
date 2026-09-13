@@ -10,6 +10,7 @@ Türkçe Discord botu ve Discord ile giriş yapılan yönetim paneli. Node.js 24
 - Kullanıcı/yetkili adı, kimlik, tarih-saat ve işlem ayrıntılarıyla kayıtlar. Yeni mesaj düzenleme logu üretilmez.
 - YouTube / YouTube Music araması, YouTube ve Spotify bağlantıları, kuyruk, ses, DJ rolü.
 - Kalıcı hatırlatıcılar, isteğe bağlı sağlık asistanı, spam/phishing koruması, özel destek ve savunma odaları, yönetilebilir üye blacklist’i.
+- NightRiderz Crew #1636 için REP, Last login, Events completed ve Driver score listesi; Europe/Istanbul gün başlangıcına göre günlük karşılaştırma.
 - Sunucu başına kalıcı ayarlar, son 30 gün / en fazla 10.000 olay. Otomatik cevap, koruma ve özel oda kayıtları ilgili mesaj içeriğini içerir; bot token’ları loglanmaz.
 
 ## Web sitesi ve canlı panel
@@ -125,14 +126,16 @@ Mevcut systemd müzik kurulumunu güncellerken `deploy/lavalink.yml` dosyasını
 | `!özelkomut` | Panelden tanımlanan cevap |
 | `/hatırlat not:2 saat sonra NFS turnuvası var hedef:DM` | Kalıcı zamanlı bildirim |
 | `/hatırlatıcılar [iptal:kimlik]` | Kişisel liste ve iptal |
-| `/sağlık-asistanı durum:aç [hedef:DM]` | Kişisel mola hatırlatmaları |
+| `/healthcare durum:aç [hedef:DM]` | Kişisel mola hatırlatmaları |
 | `/bilet-kapat` | Destek talebini kapat, kanalı koru |
 | `/uyar üye:... sebep:...` | Yetkili uyarısı ve özel savunma |
 | `/savunma-yanıt mesaj:...` | Yetkiliden üyeye bot DM yanıtı |
 
 ## Topluluk araçları ve izinler
 
-Panelin Spam & phishing, Destek & savunma, Hatırlatıcı & sağlık, Üye blacklist ve Yetkilendirme bölümlerinden ayarlanır. Hatırlatıcılar 15 saniyede bir kontrol edilir, yeniden başlatmada korunur; DM kapalıysa üç denemeden sonra hata kaydı kalır. Sağlık asistanı yalnızca `/sağlık-asistanı` ile katılan kullanıcıları izler; kesintisiz ses veya oyun oturumu kullanılır, ekran etkinliği ölçülmez. Yeniden başlatma süreyi sıfırlar. Selamlama tarayıcının saat dilimini kullanır; konum izni/IP konum hizmeti kullanmaz.
+Panelin Spam & phishing, Destek & savunma, Hatırlatıcı & sağlık, Üye blacklist ve Yetkilendirme bölümlerinden ayarlanır. Hatırlatıcılar 15 saniyede bir kontrol edilir, yeniden başlatmada korunur; DM kapalıysa üç denemeden sonra hata kaydı kalır. Sağlık asistanı yalnızca `/healthcare` ile katılan kullanıcıları izler; kesintisiz ses veya oyun oturumu kullanılır, ekran etkinliği ölçülmez. Yeniden başlatma süreyi sıfırlar. Selamlama tarayıcının saat dilimini kullanır; konum izni/IP konum hizmeti kullanmaz.
+
+Crew REP paneli saatlik yenilenir ve panelden elle de güncellenebilir. Profil istatistikleri NightRiderz herkese açık API’sinden alınır. `NRZ_USER_KEY` ve `NRZ_PERSONA_KEY` salt-okunur oturum değerleri ayarlanırsa üye kadrosu ve REP değerleri Members bölümünden canlı alınır; boş bırakılırsa son doğrulanan 33 kişilik kadro kullanılır. Bu iki değer özel yapılandırmadır ve GitHub’a eklenmez.
 
 Phishing alan adları [Discord-AntiScam](https://github.com/Discord-AntiScam/scam-links) listesinden 15 dakikada bir alınır ve yerel önbellekte tutulur. Bağlantılara istek gönderilmez; alan adı/alt alan adı karşılaştırılır. Listede olmayan saldırılar tespit edilmeyebilir. Discord ağ ve hız sınırları nedeniyle milisaniyelik silme garantisi yoktur. Botun Mesajları Yönet ve Üyeleri Zamanaşımına Uğrat izinleri ile hedef üyeden yüksek rolü gerekir. Phishing timeout süresi 12 saat, spam varsayılanı 10 dakikadır. Spam için aynı mesajın 3 saniyede 5 kez gelmesi gerekir.
 

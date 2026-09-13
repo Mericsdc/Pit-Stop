@@ -36,6 +36,10 @@ export function readConfig(env = process.env) {
     dataDir: resolve(env.DATA_DIR?.trim() || './data'),
     lavalink: lavalinkHost ? { host: lavalinkHost, port: readPort(env.LAVALINK_PORT, 2333, 'LAVALINK_PORT'), password: lavalinkPassword, secure: env.LAVALINK_SECURE === 'true' } : undefined,
     spotifyConfigured: env.SPOTIFY_ENABLED === 'true' && Boolean(env.SPOTIFY_CLIENT_ID?.trim() && env.SPOTIFY_CLIENT_SECRET?.trim()),
+    nightriderz: {
+      userKey: env.NRZ_USER_KEY?.trim() || '',
+      personaKey: env.NRZ_PERSONA_KEY?.trim() || '',
+    },
   };
 }
 

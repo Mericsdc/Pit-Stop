@@ -4,7 +4,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { csrf: '', guild: null, view: 'overview', logs: [], dirty: false, me: null };
 let guildLoadVersion = 0;
-const titles = { overview: 'Genel bakış', community: 'Üyeler & roller', responders: 'Otomatik cevaplar', music: 'Müzik istasyonu', logs: 'Olay kayıtları', settings: 'Bot ayarları', blacklist: 'Üye blacklist', protection: 'Spam & phishing koruması', tickets: 'Destek & savunma', tools: 'Hatırlatıcı & sağlık', access: 'Yetkilendirme' };
+const titles = { overview: 'Genel bakış', community: 'Üyeler & roller', crew: 'Crew REP takibi', responders: 'Otomatik cevaplar', music: 'Müzik istasyonu', logs: 'Olay kayıtları', settings: 'Bot ayarları', blacklist: 'Üye blacklist', protection: 'Spam & phishing koruması', tickets: 'Destek & savunma', tools: 'Hatırlatıcı & sağlık', access: 'Yetkilendirme' };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const check = value => value ? 'checked' : '';
 const badge = (value, yes = 'Etkin', no = 'Kapalı') => `<span class="badge ${value ? 'on' : 'off'}">${value ? '●' : '○'} ${escape(value ? yes : no)}</span>`;
@@ -50,6 +50,7 @@ function renderOverview() {
     ['♧', 'Savunma odaları', 'Moderasyon işlemleri için kayıtlı özel görüşmeler.', s.defenseEnabled],
     ['◷', 'Hatırlatıcılar', '/hatırlat ile kalıcı kişisel notlar.', true],
     ['☀', 'Sağlık asistanı', 'Katılmayı seçen üyelere mola hatırlatmaları.', s.healthEnabled],
+    ['🏁', 'Crew REP takibi', 'NightRiderz üye ve profil istatistiklerini günlük karşılaştır.', true],
   ];
   const active = modules.filter(([, , , enabled]) => enabled).length;
   return `<div class="stats">
@@ -93,17 +94,32 @@ function renderSettings() {
   return `<div class="grid-2"><form id="settings-form" class="card"><h3>Log kanalı</h3><p class="muted tiny">Olay kayıtlarını panelde her zaman görebilirsiniz. İsterseniz Discord’da bir kanala da gönderin.</p><div class="field"><label for="log-channel">Discord log kanalı</label><select id="log-channel">${channelOptions(s.logChannelId)}</select><small>Boş bırakırsanız yalnızca panel kayıtları tutulur.</small></div><div class="form-actions"><button class="button primary">Ayarları kaydet</button></div></form><section class="card"><h3>Bot izinleri</h3><p class="muted tiny">Sunucu düzeyindeki izinler. Kanal izinleri ayrıca geçerlidir.</p>${[['manageRoles', 'Rolleri Yönet'], ['manageMessages', 'Mesajları Yönet'], ['connect', 'Ses Kanalına Bağlan'], ['speak', 'Konuş'], ['moderateMembers', 'Üyeleri Zamanaşımına Uğrat'], ['viewAuditLog', 'Denetim Kaydını Görüntüle'], ['manageChannels', 'Kanalları Yönet'], ['createPrivateThreads', 'Özel Thread Oluştur'], ['manageThreads', 'Thread Yönet']].map(([key, label]) => `<div class="permission"><span>${label}</span>${badge(perms[key], 'Var', 'Eksik')}</div>`).join('')}</section><section class="card wide"><div class="card-header"><h3>Komut rehberi</h3><span class="badge">/ komutları</span></div><div class="command-list">${commands.map(([name, desc]) => `<div class="command-item"><code>${name}</code><p>${desc}</p></div>`).join('')}</div><div class="hint">Bot token’ı, OAuth2 ve müzik servisi anahtarları sunucunun özel yapılandırmasında tutulur. Panelde gösterilmez.</div></section></div>`;
 }
 
+const signed = value => `${Number(value || 0) > 0 ? '+' : ''}${number(value)}`;
+function crewBody(crew) {
+  if (!crew?.members?.length) return `<div class="empty"><span class="empty-symbol">◇</span>${escape(crew?.error || 'Crew verileri hazırlanıyor.')}</div>`;
+  return `<div class="stats"><div class="card stat"><div class="stat-label">Crew toplam REP</div><div class="stat-value">${number(crew.crewRep)}</div></div><div class="card stat"><div class="stat-label">Bugünkü REP</div><div class="stat-value">${signed(crew.dailyCrewRep)}</div></div><div class="card stat"><div class="stat-label">Bugünkü etkinlik</div><div class="stat-value">${signed(crew.dailyEvents)}</div></div><div class="card stat"><div class="stat-label">Takip edilen üye</div><div class="stat-value">${number(crew.members.length)}</div></div></div>${crew.error || crew.rosterError ? `<div class="notice error">${escape(crew.error || crew.rosterError)}</div>` : ''}<section class="card"><div class="card-header"><div><h3>Üye karşılaştırması</h3><p class="muted tiny">Son yenileme: ${date(crew.updatedAt)} · Gün başlangıcı: Europe/Istanbul</p></div><a class="button subtle" href="${escape(crew.sourceUrl)}" target="_blank" rel="noopener noreferrer">Kaynağı aç ↗</a></div><div class="table-wrap"><table><thead><tr><th>ÜYE</th><th>CREW REP</th><th>BUGÜN REP</th><th>LAST LOGIN</th><th>EVENTS COMPLETED</th><th>BUGÜN EVENT</th><th>DRIVER SCORE</th><th>BUGÜN SCORE</th></tr></thead><tbody>${crew.members.map(member => `<tr><td><strong>${escape(member.name)}</strong><small class="muted">Level ${number(member.level)}</small></td><td>${number(member.crewRep)}</td><td>${signed(member.dailyCrewRep)}</td><td class="time">${escape(member.lastLogin || '—')}</td><td>${number(member.eventsCompleted)}</td><td>${signed(member.dailyEvents)}</td><td>${number(member.driverScore)}</td><td>${signed(member.dailyDriverScore)}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny">${crew.exactRoster ? 'Üye listesi NightRiderz Members bölümünden canlı alındı.' : 'Üye listesi son doğrulanan Crew kadrosundan, profil alanları NightRiderz API üzerinden canlı alındı.'}${crew.profileFailures ? ` ${number(crew.profileFailures)} profil son başarılı değeri korudu.` : ''}</p></section>`;
+}
+function renderCrew() { return `<section class="card"><div class="card-header"><div><h3>NightRiderz Crew #1636</h3><p class="muted">Crew REP, Last login, Events completed ve Driver score.</p></div><button class="button primary" id="refresh-crew">↻ Şimdi yenile</button></div></section><div id="crew-content">${crewBody(state.guild.crew)}</div>`; }
+async function loadCrew(force = false) {
+  const guildId = state.guild.id;
+  const crew = await guildApi('crew', force ? { method: 'POST', body: '{}' } : undefined);
+  if (state.guild?.id !== guildId) return;
+  state.guild.crew = crew;
+  if ($('#crew-content')) $('#crew-content').innerHTML = crewBody(crew);
+}
+
 function render() {
   if (!state.guild) return;
   $('#guild-name').textContent = state.guild.name;
   $('#view-title').textContent = titles[state.view];
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  $('#view-content').innerHTML = greeting() + ({ overview: renderOverview, community: renderCommunity, responders: renderResponders, music: renderMusic, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, access: renderAccess })[state.view]();
+  $('#view-content').innerHTML = (greeting() + ({ overview: renderOverview, community: renderCommunity, crew: renderCrew, responders: renderResponders, music: renderMusic, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, access: renderAccess })[state.view]()).replaceAll('/sağlık-asistanı', '/healthcare');
   if (['blacklist', 'tickets', 'tools', 'access'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
   if (state.view === 'overview') void loadLogs(false, true).catch(error => notice(error.message, true));
   if (state.view === 'logs') void loadLogs().catch(error => notice(error.message, true));
   if (state.view === 'community') updateLeavePreview();
+  if (state.view === 'crew') void loadCrew().catch(error => notice(error.message, true));
 }
 async function loadGuild(guildId) {
   const version = ++guildLoadVersion;
@@ -153,6 +169,7 @@ document.addEventListener('click', async event => {
     if (button.id === 'add-response') { if ($$('.response-row').length >= 50) throw new Error('En fazla 50 otomatik cevap ekleyebilirsiniz.'); $('#responses').insertAdjacentHTML('beforeend', responseRow()); $('#responses-empty').hidden = true; state.dirty = true; $('#responses').lastElementChild.querySelector('input').focus(); }
     if (button.classList.contains('remove-response')) { button.closest('.response-row').remove(); $('#responses-empty').hidden = Boolean($$('.response-row').length); state.dirty = true; }
     if (button.id === 'reload-logs') await loadLogs();
+    if (button.id === 'refresh-crew') { button.disabled = true; await loadCrew(true); notice('Crew REP ve profil bilgileri güncellendi.'); }
     if (button.id === 'more-logs') await loadLogs(true);
     if (button.id === 'publish-ticket') { await guildApi('tickets', { method: 'POST', body: '{}' }); notice('Destek düğmesi seçilen kanala yayımlandı.'); }
     if (button.dataset.removeRecord) { await guildApi(button.dataset.resource, { method: 'DELETE', body: JSON.stringify(button.dataset.resource === 'blacklist' ? { userId: button.dataset.removeRecord } : { id: button.dataset.removeRecord }) }); await loadFeatureRecords(); notice('Kayıt güncellendi.'); }

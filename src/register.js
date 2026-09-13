@@ -17,6 +17,10 @@ export async function registerCommands(rest, config, commands) {
     : Routes.applicationCommands(config.clientId);
   const existing = typeof rest.get === 'function' ? await rest.get(route) : [];
   const byName = new Map(existing.map(item => [item.name, item]));
+  for (const legacyName of ['sağlık-asistanı']) {
+    const legacy = byName.get(legacyName);
+    if (legacy?.id && typeof rest.delete === 'function') await rest.delete(`${route}/${legacy.id}`);
+  }
   for (const command of commands) {
     const payload = command.data.toJSON();
     if (config.guildId) {

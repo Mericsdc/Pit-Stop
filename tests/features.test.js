@@ -99,6 +99,26 @@ test('ticket creation isolates permissions and deduplicates concurrent requests'
   assert.deepEqual(created[0].permissionOverwrites[0], { id: G, deny: [P.ViewChannel] });
   assert.deepEqual(created[0].permissionOverwrites.map(p => p.id), [G, U, R, B]);
 });
+test('ticket close button lets only the ticket owner or support staff close once', async t => {
+  const f = fixture(t), edits = [];
+  const ticketChannel = { id: C, permissionOverwrites: { edit: async (...args) => edits.push(args) } };
+  f.store.putRecord(G, 'ticket', C, { userId: U, name: 'Pilot', createdAt: f.now(), status: 'open' });
+  f.features.install();
+  const replies = [];
+  const interaction = { customId: 'ticket:close', guildId: G, channel: ticketChannel, channelId: C, user: f.user, member: f.member, isButton: () => true, deferReply: async () => {}, editReply: async text => replies.push(text) };
+  await Promise.all(f.client.listeners('interactionCreate').map(fn => fn(interaction)));
+  assert.equal(f.store.getRecord(G, 'ticket', C).status, 'closed');
+  assert.deepEqual(edits, [[U, { SendMessages: false }]]);
+  assert.match(replies[0], /Talep kapatıldı/);
+  await Promise.all(f.client.listeners('interactionCreate').map(fn => fn(interaction)));
+  assert.match(replies[1], /zaten kapalı/);
+});
+test('health command uses an ASCII name and support-role ticket close remains visible', t => {
+  const f = fixture(t), definitions = Object.fromEntries(f.features.commands.map(item => [item.data.toJSON().name, item.data.toJSON()]));
+  assert.ok(definitions.healthcare);
+  assert.equal(definitions['sağlık-asistanı'], undefined);
+  assert.equal(definitions['bilet-kapat'].default_member_permissions, undefined);
+});
 test('defense form rejects a different user before opening a modal', async t => {
   const f = fixture(t); f.store.putRecord(G, 'case', C, { userId: B, status: 'open' }); f.features.install();
   let reply, shown = false;

@@ -74,7 +74,7 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
   if (next.defenseEnabled && (!next.defenseChannelId || !next.supportRoleId)) throw httpError(400, 'Savunma sistemi için ana kanal ve destek rolü seçin.');
 }
 
-export function createDashboard({ client, store, music, features, config, logger = () => {}, fetcher = fetch }) {
+export function createDashboard({ client, store, music, features, crew, config, logger = () => {}, fetcher = fetch }) {
   const sessions = new Map(), pendingStates = new Map(), limits = new Map();
   const base = new URL(config.publicUrl);
   const secure = base.protocol === 'https:';
@@ -208,7 +208,7 @@ export function createDashboard({ client, store, music, features, config, logger
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|crew))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
@@ -258,6 +258,11 @@ export function createDashboard({ client, store, music, features, config, logger
         return;
       }
       if (resource === 'protection' && request.method === 'GET') { json(response, 200, features?.protectionStatus() || {}); return; }
+      if (resource === 'crew' && request.method === 'GET') { json(response, 200, crew?.getStatus(guildId) || { enabled: false, members: [], error: 'Crew takibi kullanılamıyor.' }); return; }
+      if (resource === 'crew' && request.method === 'POST') {
+        if (!crew) throw httpError(503, 'Crew takibi kullanılamıyor.');
+        json(response, 200, await crew.refresh(guildId, true)); return;
+      }
       if (resource === 'blacklist') {
         if (request.method === 'GET') { json(response, 200, store.listRecords(guildId, 'blacklist', 10000)); return; }
         const body = await readJson(request);
@@ -288,10 +293,10 @@ export function createDashboard({ client, store, music, features, config, logger
           else {
             const channel = await guild.channels.fetch(item.id).catch(() => null);
             if (kind === 'case' && channel) { await channel.setLocked(true, 'Panelden kapatıldı'); await channel.setArchived(true, 'Panelden kapatıldı'); }
-            if (kind === 'ticket' && channel) await channel.permissionOverwrites.edit(item.userId, { SendMessages: false });
-            store.putRecord(guildId, kind, item.id, { ...item, status: 'closed', closedAt: Date.now(), closedBy: session.user.id });
+            if (kind === 'ticket' && channel) await features.closeTicket(guildId, channel, { id: session.user.id, user: session.user, member });
+            else store.putRecord(guildId, kind, item.id, { ...item, status: 'closed', closedAt: Date.now(), closedBy: session.user.id, closedByName: session.user.name });
           }
-          store.addLog(guildId, { type: `${kind}.closed`, actorId: session.user.id, message: `${session.user.name} kaydı kapattı.`, details: { id: body.id } });
+          if (kind !== 'ticket') store.addLog(guildId, { type: `${kind}.closed`, actorId: session.user.id, message: `${session.user.name} kaydı kapattı.`, details: { actorName: session.user.name, id: body.id } });
           json(response, 200, { ok: true }); return;
         }
       }

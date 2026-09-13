@@ -292,3 +292,14 @@ test('unchanged command definitions avoid Discord write rate limits on restart',
   rest.get = async () => [{ ...owned.data.toJSON(), description: 'Old description' }];
   await registerCommands(rest, { clientId: CLIENT }, [owned]); assert.equal(writes, 1);
 });
+
+test('registration deletes only the renamed legacy health command', async () => {
+  const owned = registrationCommand('healthcare'), removed = [];
+  const rest = {
+    get: async () => [{ id: 'legacy-id', name: 'sağlık-asistanı' }, { id: 'external-id', name: 'external' }],
+    delete: async route => removed.push(route),
+    post: async () => {},
+  };
+  await registerCommands(rest, { clientId: CLIENT }, [owned]);
+  assert.deepEqual(removed, [`${Routes.applicationCommands(CLIENT)}/legacy-id`]);
+});

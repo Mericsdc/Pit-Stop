@@ -18,7 +18,7 @@ const adminPermissions = PermissionFlagsBits.ManageGuild | PermissionFlagsBits.M
 
 async function setup(t, configOverrides = {}) {
   const store = createStore(':memory:');
-  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [] };
+  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [], crew: [], ticketCloses: [] };
   const member = {
     id: USER, permissions: new PermissionsBitField(adminPermissions),
     roles: { highest: { comparePositionTo: (role) => 10 - role.position } },
@@ -56,6 +56,19 @@ async function setup(t, configOverrides = {}) {
     control: async (...args) => { calls.music.push(args); },
     applySettings: async (...args) => { calls.settings.push(args); },
   };
+  const features = {
+    protectionStatus: () => ({}),
+    publishTicket: async () => {},
+    closeTicket: async (guildId, ticketChannel, actor) => {
+      calls.ticketCloses.push({ guildId, channelId: ticketChannel.id, actorId: actor.id });
+      const item = store.getRecord(guildId, 'ticket', ticketChannel.id);
+      store.putRecord(guildId, 'ticket', ticketChannel.id, { ...item, status: 'closed', closedBy: actor.id, closedAt: Date.now() });
+    },
+  };
+  const crew = {
+    getStatus: guildId => ({ enabled: true, crewId: 1636, guildId, members: [{ name: 'Pilot', crewRep: 100 }] }),
+    refresh: async guildId => { calls.crew.push(guildId); return { enabled: true, crewId: 1636, members: [{ name: 'Pilot', crewRep: 125 }] }; },
+  };
   const config = {
     publicUrl: PUBLIC_ORIGIN,
     clientId: BOT,
@@ -85,7 +98,7 @@ async function setup(t, configOverrides = {}) {
     }
     throw new Error(`Unexpected mocked Discord request: ${path}`);
   };
-  const server = createDashboard({ client, store, music, config, fetcher, logger: (...args) => calls.diagnostics.push(args) });
+  const server = createDashboard({ client, store, music, features, crew, config, fetcher, logger: (...args) => calls.diagnostics.push(args) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -124,7 +137,7 @@ async function setup(t, configOverrides = {}) {
     headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
-  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music };
+  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music, features, crew };
 }
 
 function noSecrets(value) {
@@ -196,6 +209,26 @@ test('settings writes require both the session CSRF token and the configured ori
   assert.equal(valid.status, 200);
   assert.equal((await valid.json()).musicVolume, 77);
   assert.equal(fixture.store.getLogs(GUILD)[0].actorId, USER);
+});
+
+test('crew dashboard reads current comparisons and triggers a protected refresh', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  const current = await fixture.request(`/api/guilds/${GUILD}/crew`, { headers: { Cookie: session.cookie } });
+  assert.equal(current.status, 200);
+  assert.equal((await current.json()).members[0].crewRep, 100);
+  const refreshed = await fixture.request(`/api/guilds/${GUILD}/crew`, { method: 'POST', headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(refreshed.status, 200);
+  assert.equal((await refreshed.json()).members[0].crewRep, 125);
+  assert.deepEqual(fixture.calls.crew, [GUILD]);
+});
+
+test('panel ticket close uses the same audited close path as Discord', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  fixture.store.putRecord(GUILD, 'ticket', CHANNEL, { userId: USER, status: 'open', createdAt: Date.now() });
+  const response = await fixture.request(`/api/guilds/${GUILD}/tickets`, { method: 'DELETE', headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: CHANNEL }) });
+  assert.equal(response.status, 200);
+  assert.equal(fixture.store.getRecord(GUILD, 'ticket', CHANNEL).status, 'closed');
+  assert.deepEqual(fixture.calls.ticketCloses, [{ guildId: GUILD, channelId: CHANNEL, actorId: USER }]);
 });
 
 test('unauthenticated APIs and tampered session cookies are rejected', async (t) => {

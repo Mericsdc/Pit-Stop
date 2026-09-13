@@ -16,6 +16,7 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
   const on = (event, fn) => { const wrapped = (...args) => Promise.resolve(fn(...args)).catch(error => logger('error', 'feature_failed', { event, code: typeof error.code === 'number' ? error.code : 'UNKNOWN' })); client.on(event, wrapped); listeners.push([event, wrapped]); };
   const settings = guildId => store.getSettings(guildId);
   const hasStaff = (member, s) => member.permissions.has(P.ManageGuild) || Boolean(s.supportRoleId && member.roles.cache.has(s.supportRoleId));
+  const ticketOverwrites = (guildId, userId, supportRoleId) => [{ id: guildId, deny: [P.ViewChannel] }, { id: userId, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AttachFiles] }, { id: supportRoleId, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory] }, { id: client.user.id, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.ManageChannels] }];
   const guildAllowed = id => {
     const home = config.allowedGuildIds?.[0];
     const allowed = home ? store.getRecord(home, 'install_policy', 'current')?.guildIds || config.allowedGuildIds : [];
@@ -96,6 +97,16 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
     store.putRecord(guild.id, 'ticket_panel', 'current', { channelId: channel.id, messageId: message.id });
     record(guild.id, 'ticket.published', 'Destek Talebi Oluştur düğmesi yayımlandı.', actorId, { channelId: channel.id });
   }
+  async function closeTicket(guildId, channel, actor, { allowOwner = false } = {}) {
+    const item = store.getRecord(guildId, 'ticket', channel.id);
+    if (!item) throw new Error('Bu kanal bir destek talebi değil.');
+    if (item.status !== 'open') throw new Error('Bu destek talebi zaten kapalı.');
+    if (allowOwner && actor.id !== item.userId && !hasStaff(actor.member, settings(guildId))) throw new Error('Bu destek talebini kapatma yetkiniz yok.');
+    await channel.permissionOverwrites.edit(item.userId, { SendMessages: false });
+    store.putRecord(guildId, 'ticket', channel.id, { ...item, status: 'closed', closedAt: now(), closedBy: actor.id, closedByName: userLabel(actor.user || actor) });
+    record(guildId, 'ticket.closed', `${userLabel(actor.user || actor)} destek talebini kapattı.`, actor.id, { actorName: userLabel(actor.user || actor), channelId: channel.id, userId: item.userId });
+    return store.getRecord(guildId, 'ticket', channel.id);
+  }
   async function interactionHandler(i) {
     if (i.isButton?.() && i.customId === 'ticket:create') {
       await i.deferReply(ephemeral);
@@ -108,13 +119,22 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
         const existing = tickets.find(t => t.userId === i.user.id && t.status === 'open');
         if (existing && await i.guild.channels.fetch(existing.id).catch(() => null)) return i.editReply(`Açık talebiniz: <#${existing.id}>`);
         if (tickets.filter(t => t.status === 'open').length >= 100) return i.editReply('Açık bilet kapasitesi dolu. Bir yetkiliye bildirin.');
+        const permissionOverwrites = ticketOverwrites(i.guildId, i.user.id, s.supportRoleId);
         const channel = await i.guild.channels.create({ name: `destek-${i.user.username}`.slice(0, 90), type: ChannelType.GuildText, parent: s.ticketCategoryId || undefined,
-          permissionOverwrites: [{ id: i.guildId, deny: [P.ViewChannel] }, { id: i.user.id, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AttachFiles] }, { id: s.supportRoleId, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory] }, { id: client.user.id, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.ManageChannels] }], reason: 'Pit-Stop özel destek talebi' });
-        store.putRecord(i.guildId, 'ticket', channel.id, { userId: i.user.id, name: userLabel(i.user), createdAt: now(), status: 'open' });
-        await channel.send({ content: `Hoş geldiniz ${userLabel(i.user)}. Talebinizi yazabilirsiniz. Yetkililer /bilet-kapat ile kapatabilir. Bu odadaki mesajlar panel günlüğüne kaydedilir.`, allowedMentions: noMentions });
+          permissionOverwrites, reason: 'Pit-Stop özel destek talebi' });
+        await channel.permissionOverwrites?.set?.(permissionOverwrites, 'Pit-Stop bilet gizliliğini uygula');
+        store.putRecord(i.guildId, 'ticket', channel.id, { userId: i.user.id, name: userLabel(i.user), createdAt: now(), status: 'open', closeControlPublished: true, privacyVerifiedAt: now() });
+        const closeRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket:close').setLabel('Bileti Kapat').setStyle(ButtonStyle.Danger));
+        await channel.send({ content: `Hoş geldiniz ${userLabel(i.user)}. Talebinizi yazabilirsiniz. Siz veya yetkililer aşağıdaki düğmeyle; yetkililer ayrıca /bilet-kapat komutuyla kapatabilir. Bu odadaki mesajlar panel günlüğüne kaydedilir.`, components: [closeRow], allowedMentions: noMentions });
         record(i.guildId, 'ticket.opened', `${userLabel(i.user)} destek talebi açtı.`, i.user.id, { channelId: channel.id });
         await i.editReply(`Özel destek kanalınız: <#${channel.id}>`);
       } finally { locks.delete(key); }
+    } else if (i.isButton?.() && i.customId === 'ticket:close') {
+      await i.deferReply(ephemeral);
+      try {
+        await closeTicket(i.guildId, i.channel, { id: i.user.id, user: i.user, member: i.member }, { allowOwner: true });
+        await i.editReply('Talep kapatıldı. Kanal ve konuşma kayıtları korundu.');
+      } catch (error) { await i.editReply(error.message); }
     } else if (i.isButton?.() && i.customId.startsWith('defense:')) {
       const [, guildId, id] = i.customId.split(':');
       const item = store.getRecord(guildId, 'case', id);
@@ -149,17 +169,17 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
       const items = store.listRecords(i.guildId, 'reminder').filter(r => r.userId === i.user.id && r.status === 'pending');
       await i.reply({ ...ephemeral, content: items.map(r => `${r.id}\n<t:${Math.floor(r.dueAt / 1000)}:R> ${short(r.text, 40)}`).join('\n').slice(0, 1900) || 'Bekleyen hatırlatıcınız yok.' });
     } },
-    { data: command('sağlık-asistanı', 'Uzun oturumlar için kişisel mola hatırlatmalarını aç veya kapat.').addStringOption(o => o.setName('durum').setDescription('Seçiminiz').setRequired(true).addChoices({ name: 'aç', value: 'on' }, { name: 'kapat', value: 'off' })).addStringOption(o => o.setName('hedef').setDescription('Bildirim yeri').addChoices({ name: 'DM', value: 'dm' }, { name: 'Bu kanal', value: 'channel' })), async execute(i) {
+    { data: command('healthcare', 'Uzun oturumlar için kişisel mola hatırlatmalarını aç veya kapat.').addStringOption(o => o.setName('durum').setDescription('Seçiminiz').setRequired(true).addChoices({ name: 'aç', value: 'on' }, { name: 'kapat', value: 'off' })).addStringOption(o => o.setName('hedef').setDescription('Bildirim yeri').addChoices({ name: 'DM', value: 'dm' }, { name: 'Bu kanal', value: 'channel' })), async execute(i) {
       const enabled = i.options.getString('durum') === 'on';
       store.putRecord(i.guildId, 'health', i.user.id, { enabled, name: userLabel(i.user), destination: i.options.getString('hedef') || 'dm', channelId: i.channelId }); sessions.delete(`${i.guildId}:${i.user.id}`);
       await i.reply({ ...ephemeral, content: enabled ? 'Sağlık asistanı açıldı. Kesintisiz ses kanalı oturumu veya etkin oyun süresi için mola hatırlatacağım. Oyun takibi, sunucuda Presence Intent açık olduğunda çalışır.' : 'Sağlık asistanı kapatıldı; oturum takibi durduruldu.' });
     } },
-    { data: command('bilet-kapat', 'Bu destek talebini kapatır ve kaydı korur.').setDefaultMemberPermissions(P.ManageGuild), async execute(i) {
+    { data: command('bilet-kapat', 'Bu destek talebini kapatır ve kaydı korur.'), async execute(i) {
       if (!hasStaff(i.member, settings(i.guildId))) return i.reply({ ...ephemeral, content: 'Destek yetkisi gerekli.' });
       const item = store.getRecord(i.guildId, 'ticket', i.channelId); if (!item) return i.reply({ ...ephemeral, content: 'Bu kanal bir destek talebi değil.' });
-      await i.deferReply(ephemeral); await i.channel.permissionOverwrites.edit(item.userId, { SendMessages: false });
-      store.putRecord(i.guildId, 'ticket', i.channelId, { ...item, status: 'closed', closedAt: now(), closedBy: i.user.id });
-      record(i.guildId, 'ticket.closed', 'Destek talebi kapatıldı.', i.user.id, { channelId: i.channelId }); await i.editReply('Talep kapatıldı. Kanal ve konuşma kayıtları korundu.');
+      await i.deferReply(ephemeral);
+      try { await closeTicket(i.guildId, i.channel, { id: i.user.id, user: i.user, member: i.member }); await i.editReply('Talep kapatıldı. Kanal ve konuşma kayıtları korundu.'); }
+      catch (error) { await i.editReply(error.message); }
     } },
     { data: command('uyar', 'Üyeyi uyarır ve etkinse özel savunma odası açar.').setDefaultMemberPermissions(P.ModerateMembers).addUserOption(o => o.setName('üye').setDescription('Uyarılacak üye').setRequired(true)).addStringOption(o => o.setName('sebep').setDescription('Kural ihlali').setRequired(true).setMaxLength(1000)), async execute(i) {
       if (!i.member.permissions.has(P.ModerateMembers)) return i.reply({ ...ephemeral, content: 'Üyeleri Zamanaşımına Uğrat izni gerekli.' });
@@ -227,11 +247,33 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
   }
   async function initialize() {
     if (config.dataDir) { try { const cache = JSON.parse(await readFile(join(config.dataDir, 'phishing-cache.json'), 'utf8')); feed = new Set(cache.domains); feedUpdatedAt = cache.updatedAt; } catch { /* Cold start uses custom domains until refresh. */ } }
-    for (const guild of client.guilds.cache.values()) if (!guildAllowed(guild.id)) await guild.leave();
+    for (const guild of client.guilds.cache.values()) {
+      if (!guildAllowed(guild.id)) { await guild.leave(); continue; }
+      const s = settings(guild.id);
+      if (!s.supportRoleId) continue;
+      for (const item of store.listRecords(guild.id, 'ticket', 1000).filter(ticket => ticket.status === 'open')) {
+        const channel = await guild.channels.fetch(item.id).catch(() => null);
+        if (!channel?.permissionOverwrites) continue;
+        try {
+          await channel.permissionOverwrites.set(ticketOverwrites(guild.id, item.userId, s.supportRoleId), 'Pit-Stop bilet gizliliğini onar');
+          let updated = item;
+          if (!item.closeControlPublished) {
+            const closeRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket:close').setLabel('Bileti Kapat').setStyle(ButtonStyle.Danger));
+            await channel.send({ content: 'Bu destek talebini sahibi veya destek yetkilileri aşağıdaki düğmeyle kapatabilir.', components: [closeRow], allowedMentions: noMentions });
+            updated = { ...updated, closeControlPublished: true };
+          }
+          if (!item.privacyVerifiedAt) {
+            updated = { ...updated, privacyVerifiedAt: now() };
+            record(guild.id, 'ticket.privacy_repaired', 'Açık destek talebinin özel kanal izinleri doğrulandı.', client.user.id, { actorName: userLabel(client.user), channelId: item.id, userId: item.userId });
+          }
+          if (updated !== item) store.putRecord(guild.id, 'ticket', item.id, updated);
+        } catch { record(guild.id, 'ticket.repair_failed', 'Açık destek talebinin izinleri onarılamadı.', client.user.id, { actorName: userLabel(client.user), channelId: item.id }); }
+      }
+    }
     void refreshFeed(); timer = setInterval(() => void tick().catch(() => logger('error', 'feature_tick_failed')), 15000); timer.unref();
     refreshTimer = setInterval(() => void refreshFeed(), 15 * 60000); refreshTimer.unref();
   }
-  return { commands, install, initialize, tick, processMessage, protectionStatus, publishTicket, openDefense,
+  return { commands, install, initialize, tick, processMessage, protectionStatus, publishTicket, openDefense, closeTicket,
     close() { clearInterval(timer); clearInterval(refreshTimer); for (const [event, listener] of listeners) client.off(event, listener); sessions.clear(); },
   };
 }
