@@ -36,3 +36,41 @@ test('crew tracker stores daily REP, event and score comparisons from live Membe
   assert.equal(store.getRecord(GUILD, 'crew_daily', '2026-09-13').dailyCrewRep, 350);
   tracker.close();
 });
+
+test('crew tracker uses the first same-day snapshot for live daily REP', async t => {
+  const store = createStore(':memory:'); t.after(() => store.close());
+  let time = Date.parse('2026-09-14T07:00:00Z'), reputation = 1000;
+  const fetcher = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    if (body.methodName === 'GetMembersRep') return Response.json([{ name: 'Pilot', reputation }]);
+    return Response.json({ name: 'Pilot', last_login: '2026-09-14 10:00:00', races: 10, score: 100, level: 20 });
+  };
+  const tracker = createCrewTracker(store, { allowedGuildIds: [GUILD], nightriderz: { userKey: 'reader', personaKey: 'persona' } }, { fetcher, now: () => time });
+  const first = await tracker.refresh(GUILD, true);
+  assert.equal(first.referenceDate, '2026-09-14');
+  assert.equal(first.comparisonAvailable, true);
+  assert.equal(first.dailyCrewRep, 0);
+  reputation = 1250; time += 3 * 60_000;
+  const current = await tracker.refresh(GUILD, true);
+  assert.equal(current.dailyCrewRep, 250);
+  assert.equal(current.instantCrewRep, 250);
+  tracker.close();
+});
+
+test('first authenticated roster refresh replaces an old seed baseline', async t => {
+  const store = createStore(':memory:'); t.after(() => store.close());
+  const date = '2026-09-14';
+  store.putRecord(GUILD, 'crew_current', 'current', { exactRoster: false, members: [{ name: 'Pilot', crewRep: 100 }] });
+  store.putRecord(GUILD, 'crew_daily', date, { reference: [{ name: 'Pilot', crewRep: 100 }], referenceDate: date, latest: [{ name: 'Pilot', crewRep: 100 }] });
+  const fetcher = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    if (body.methodName === 'GetMembersRep') return Response.json([{ name: 'Pilot', reputation: 5000 }]);
+    return Response.json({ name: 'Pilot', races: 20, score: 200, level: 30 });
+  };
+  const tracker = createCrewTracker(store, { allowedGuildIds: [GUILD], nightriderz: { userKey: 'reader', personaKey: 'persona' } }, { fetcher, now: () => Date.parse('2026-09-14T09:00:00Z') });
+  const current = await tracker.refresh(GUILD, true);
+  assert.equal(current.exactRoster, true);
+  assert.equal(current.dailyCrewRep, 0);
+  assert.equal(store.getRecord(GUILD, 'crew_daily', date).reference[0].crewRep, 5000);
+  tracker.close();
+});

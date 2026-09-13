@@ -84,7 +84,7 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
   async function refresh(guildId = homeGuildId, force = false) {
     if (!guildId || guildId !== homeGuildId) throw new Error('Crew takibi bu sunucu için yapılandırılmadı.');
     const current = store.getRecord(guildId, 'crew_current', 'current');
-    if (!force && current?.updatedAt && now() - current.updatedAt < 15 * 60_000) return current;
+    if (!force && current?.updatedAt && now() - current.updatedAt < 2 * 60_000) return current;
     if (running) return running;
     running = (async () => {
       let roster = store.getRecord(guildId, 'crew_roster', 'current')?.members || INITIAL_CREW_MEMBERS;
@@ -99,15 +99,16 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       const previous = store.getRecord(guildId, 'crew_current', 'current');
       const previousByName = new Map((previous?.members || []).map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       let profileFailures = 0;
-      const profiles = await mapLimit(roster, 1, async member => {
+      const profiles = await mapLimit(roster, 4, async member => {
         const old = previousByName.get(member.name.toLocaleLowerCase('en-US'));
         try { return { ...member, ...normalizeProfile(await request('GetPlayerNext', [member.name]), member.name), profileAvailable: true }; }
         catch { profileFailures++; return { ...member, lastLogin: old?.lastLogin || null, eventsCompleted: old?.eventsCompleted || 0, driverScore: old?.driverScore || 0, level: old?.level || 0, profileAvailable: Boolean(old?.profileAvailable) }; }
       });
       const timestamp = now(), date = dayKey(timestamp), storedDay = store.getRecord(guildId, 'crew_daily', date);
       const previousDay = storedDay ? null : store.listRecords(guildId, 'crew_daily', 90).find(item => item.id < date && (Array.isArray(item.latest) || Array.isArray(item.baseline)));
-      const savedReference = storedDay?.reference || previousDay?.latest || previousDay?.baseline || [];
-      const referenceDate = storedDay?.referenceDate || previousDay?.id || null;
+      const liveSourceChanged = exactRoster && previous && !previous.exactRoster;
+      const savedReference = liveSourceChanged ? [] : storedDay?.reference || previousDay?.latest || previousDay?.baseline || [];
+      const referenceDate = liveSourceChanged ? date : storedDay?.referenceDate || previousDay?.id || date;
       const referenceByName = new Map(savedReference.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       const reference = profiles.map(item => {
         const saved = referenceByName.get(item.name.toLocaleLowerCase('en-US'));
@@ -118,12 +119,12 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       const members = profiles.map(item => {
         const base = baselineByName.get(item.name.toLocaleLowerCase('en-US')) || item;
         const old = previousByName.get(item.name.toLocaleLowerCase('en-US')) || item;
-        const comparisonAvailable = Boolean(referenceDate && base);
+        const comparisonAvailable = Boolean(base);
         return { ...item, comparisonAvailable, dailyCrewRep: comparisonAvailable ? item.crewRep - numeric(base.crewRep) : 0, dailyEvents: comparisonAvailable ? item.eventsCompleted - numeric(base.eventsCompleted) : 0, dailyDriverScore: comparisonAvailable ? item.driverScore - numeric(base.driverScore) : 0, crewRepChange: item.crewRep - numeric(old.crewRep) };
       }).sort((a, b) => b.dailyCrewRep - a.dailyCrewRep || b.crewRep - a.crewRep);
       const totals = members.reduce((sum, item) => ({ crewRep: sum.crewRep + item.crewRep, instantCrewRep: sum.instantCrewRep + item.crewRepChange, dailyCrewRep: sum.dailyCrewRep + item.dailyCrewRep, dailyEvents: sum.dailyEvents + item.dailyEvents, dailyDriverScore: sum.dailyDriverScore + item.dailyDriverScore }), { crewRep: 0, instantCrewRep: 0, dailyCrewRep: 0, dailyEvents: 0, dailyDriverScore: 0 });
       const latest = profiles.map(item => ({ name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: item.profileAvailable }));
-      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, date, referenceDate, comparisonAvailable: Boolean(referenceDate), exactRoster, profileFailures, rosterError, members, ...totals };
+      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, date, referenceDate, comparisonAvailable: Boolean(reference.length), exactRoster, profileFailures, rosterError, members, ...totals };
       store.putRecord(guildId, 'crew_current', 'current', status);
       store.putRecord(guildId, 'crew_daily', date, { reference, referenceDate, latest, updatedAt: timestamp, dailyCrewRep: totals.dailyCrewRep, dailyEvents: totals.dailyEvents, dailyDriverScore: totals.dailyDriverScore });
       store.addLog(guildId, { type: 'crew.refreshed', actorId: null, message: `${members.length} ekip üyesinin REP ve profil istatistikleri güncellendi.`, details: { crewId: NRZ_CREW_ID, exactRoster, profileFailures, instantCrewRep: totals.instantCrewRep, dailyCrewRep: totals.dailyCrewRep } });
@@ -140,7 +141,7 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
   async function initialize() {
     if (!homeGuildId) return;
     await refresh(homeGuildId, true);
-    timer = setInterval(() => void refresh(homeGuildId).catch(() => {}), 60 * 60_000);
+    timer = setInterval(() => void refresh(homeGuildId).catch(() => {}), 2 * 60_000);
     timer.unref();
   }
   return { initialize, refresh, getStatus, close() { clearInterval(timer); } };

@@ -2,13 +2,28 @@ const API_URL = 'https://api.nightriderz.world/gateway.php?contentType=applicati
 export const LIVE_MAP_URL = 'https://nightriderz.world/livemap';
 export const eventUrl = id => `https://nightriderz.world/leaderboard/${id}`;
 const HALF_HOUR = 30 * 60_000;
+export const SITE_UPDATE_DELAY = 90_000;
+const STALE_RETRY_DELAY = 20_000;
+const MAX_STALE_RETRIES = 15;
 const TYPE_NAMES = Object.freeze({ '4': 'Circuit', '9': 'Sprint', '19': 'Drag', '22': 'Meeting Place', '24': 'Team Escape', '12': 'Pursuit Outrun' });
+const CLASS_EMOJIS = Object.freeze({ S: '🟣', A: '🔴', B: '🟠', C: '🟡', D: '🟢', E: '🔵' });
 
 const clean = value => String(value || '').replace(/<[^>]*>/gu, '').replace(/&middot;|&#183;/giu, '·').replace(/&amp;/giu, '&').trim();
 
 export function nextHalfHourDelay(timestamp = Date.now()) {
   const remainder = timestamp % HALF_HOUR;
   return remainder === 0 ? HALF_HOUR : HALF_HOUR - remainder;
+}
+
+export function nextBoostedRefreshDelay(timestamp = Date.now(), updateDelay = SITE_UPDATE_DELAY) {
+  const boundary = Math.floor(timestamp / HALF_HOUR) * HALF_HOUR;
+  const currentWindowRefresh = boundary + updateDelay;
+  return timestamp < currentWindowRefresh ? currentWindowRefresh - timestamp : boundary + HALF_HOUR + updateDelay - timestamp;
+}
+
+export function classEmoji(className) {
+  const match = String(className || '').match(/\bClass\s+([A-Z])/iu);
+  return CLASS_EMOJIS[match?.[1]?.toUpperCase()] || '🏁';
 }
 
 export function normalizeBoostedEvent(races) {
@@ -65,7 +80,7 @@ export function createBoostedEventMonitor(client, store, config = {}, { fetcher 
       try {
         let event = await enrich(await requestRaces());
         const checkedAt = now();
-        if (event) event = { ...event, url: eventUrl(event.id), endsAt: checkedAt + nextHalfHourDelay(checkedAt) };
+        if (event) event = { ...event, url: eventUrl(event.id), classEmoji: classEmoji(event.className), endsAt: checkedAt + nextHalfHourDelay(checkedAt) };
         const settings = store.getSettings(guildId);
         const channelId = settings.boostedEventChannelId || config.boostedEventChannelId;
         const changed = Boolean(event && (!previous.event || previous.event.id !== event.id || previous.event.className !== event.className));
@@ -75,11 +90,11 @@ export function createBoostedEventMonitor(client, store, config = {}, { fetcher 
           const channel = await guild?.channels.fetch(channelId).catch(() => null);
           if (!channel?.isTextBased?.()) throw new Error('Boosted Event bildirim kanalı bulunamadı veya yazılabilir değil.');
           await channel.send({
-            content: `⚡ **BOOSTED EVENT**\n**Etkinlik:** ${event.name}\n${event.url}\n**Sınıf:** ${event.className}\n**Tür:** ${event.type}\n**Bitiş:** <t:${Math.floor(event.endsAt / 1000)}:t> (<t:${Math.floor(event.endsAt / 1000)}:R>)`,
+            content: `⚡ **BOOSTED EVENT**\n**Etkinlik:** ${event.name}\n${event.url}\n**Sınıf:** ${event.classEmoji} ${event.className}\n**Tür:** ${event.type}\n**Bitiş:** <t:${Math.floor(event.endsAt / 1000)}:t> (<t:${Math.floor(event.endsAt / 1000)}:R>)`,
             allowedMentions: { parse: [] },
           });
           announcedAt = checkedAt;
-          store.addLog(guildId, { type: 'boosted.announced', actorId: null, message: `${event.name} boosted etkinliği Discord kanalına gönderildi.`, details: { eventId: event.id, eventName: event.name, eventUrl: event.url, className: event.className, eventType: event.type, endsAt: event.endsAt, channelId, checkedAt } });
+          store.addLog(guildId, { type: 'boosted.announced', actorId: null, message: `${event.name} boosted etkinliği Discord kanalına gönderildi.`, details: { eventId: event.id, eventName: event.name, eventUrl: event.url, className: event.className, classEmoji: event.classEmoji, eventType: event.type, endsAt: event.endsAt, channelId, checkedAt } });
         }
         const status = { event, checkedAt, announcedAt, channelId: channelId || null, error: null };
         store.putRecord(guildId, 'boosted_event', 'current', status);
@@ -96,7 +111,20 @@ export function createBoostedEventMonitor(client, store, config = {}, { fetcher 
 
   function schedule() {
     clearTimeout(timeout);
-    timeout = setTimeout(async () => { await refresh(); schedule(); }, nextHalfHourDelay(now()));
+    const previousEvent = getStatus(homeGuildId).event;
+    const previousEventKey = previousEvent ? `${previousEvent.id}:${previousEvent.className || ''}:${previousEvent.name || ''}` : null;
+    const checkAfterSiteUpdate = async attempt => {
+      const status = await refresh();
+      const eventKey = status.event ? `${status.event.id}:${status.event.className || ''}:${status.event.name || ''}` : null;
+      const stillStale = Boolean(previousEventKey && eventKey === previousEventKey);
+      if (stillStale && attempt < MAX_STALE_RETRIES) {
+        timeout = setTimeout(() => void checkAfterSiteUpdate(attempt + 1), STALE_RETRY_DELAY);
+        timeout.unref?.();
+        return;
+      }
+      schedule();
+    };
+    timeout = setTimeout(() => void checkAfterSiteUpdate(0), nextBoostedRefreshDelay(now()));
     timeout.unref?.();
   }
 
