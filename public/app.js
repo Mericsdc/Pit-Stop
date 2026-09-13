@@ -2,7 +2,7 @@ import { staticHosting, livePanelUrl } from './site-config.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, view: 'overview', logs: [], dirty: false, me: null };
+const state = { csrf: '', guild: null, view: 'overview', logs: [], dirty: false, me: null, crewSortDirection: 'desc' };
 let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', community: 'Üyeler & roller', crew: 'Crew REP takibi', responders: 'Otomatik cevaplar', music: 'Müzik istasyonu', logs: 'Olay kayıtları', settings: 'Bot ayarları', blacklist: 'Üye blacklist', protection: 'Spam & phishing koruması', tickets: 'Destek & savunma', tools: 'Hatırlatıcı & sağlık', access: 'Yetkilendirme' };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -95,9 +95,24 @@ function renderSettings() {
 }
 
 const signed = value => `${Number(value || 0) > 0 ? '+' : ''}${number(value)}`;
+function crewTrend(member, comparisonAvailable) {
+  if (!comparisonAvailable) return '<span class="trend neutral" title="Dünkü kayıt henüz oluşmadı" aria-label="Dünkü kayıt henüz oluşmadı">• Karşılaştırma bekleniyor</span>';
+  if (Number(member.dailyCrewRep) > 0) return `<span class="trend up" title="Düne göre REP kazandı" aria-label="Düne göre REP kazandı">↑ ${signed(member.dailyCrewRep)}</span>`;
+  return `<span class="trend down" title="Bugün REP kazanmadı" aria-label="Bugün REP kazanmadı">↓ ${signed(member.dailyCrewRep)}</span>`;
+}
 function crewBody(crew) {
   if (!crew?.members?.length) return `<div class="empty"><span class="empty-symbol">◇</span>${escape(crew?.error || 'Crew verileri hazırlanıyor.')}</div>`;
-  return `<div class="stats"><div class="card stat"><div class="stat-label">Crew toplam REP</div><div class="stat-value">${number(crew.crewRep)}</div></div><div class="card stat"><div class="stat-label">Bugünkü REP</div><div class="stat-value">${signed(crew.dailyCrewRep)}</div></div><div class="card stat"><div class="stat-label">Bugünkü etkinlik</div><div class="stat-value">${signed(crew.dailyEvents)}</div></div><div class="card stat"><div class="stat-label">Takip edilen üye</div><div class="stat-value">${number(crew.members.length)}</div></div></div>${crew.error || crew.rosterError ? `<div class="notice error">${escape(crew.error || crew.rosterError)}</div>` : ''}<section class="card"><div class="card-header"><div><h3>Üye karşılaştırması</h3><p class="muted tiny">Son yenileme: ${date(crew.updatedAt)} · Gün başlangıcı: Europe/Istanbul</p></div><a class="button subtle" href="${escape(crew.sourceUrl)}" target="_blank" rel="noopener noreferrer">Kaynağı aç ↗</a></div><div class="table-wrap"><table><thead><tr><th>ÜYE</th><th>CREW REP</th><th>BUGÜN REP</th><th>LAST LOGIN</th><th>EVENTS COMPLETED</th><th>BUGÜN EVENT</th><th>DRIVER SCORE</th><th>BUGÜN SCORE</th></tr></thead><tbody>${crew.members.map(member => `<tr><td><strong>${escape(member.name)}</strong><small class="muted">Level ${number(member.level)}</small></td><td>${number(member.crewRep)}</td><td>${signed(member.dailyCrewRep)}</td><td class="time">${escape(member.lastLogin || '—')}</td><td>${number(member.eventsCompleted)}</td><td>${signed(member.dailyEvents)}</td><td>${number(member.driverScore)}</td><td>${signed(member.dailyDriverScore)}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny">${crew.exactRoster ? 'Üye listesi NightRiderz Members bölümünden canlı alındı.' : 'Üye listesi son doğrulanan Crew kadrosundan, profil alanları NightRiderz API üzerinden canlı alındı.'}${crew.profileFailures ? ` ${number(crew.profileFailures)} profil son başarılı değeri korudu.` : ''}</p></section>`;
+  const direction = state.crewSortDirection;
+  const members = [...crew.members].sort((left, right) => {
+    const delta = Number(left.dailyCrewRep || 0) - Number(right.dailyCrewRep || 0);
+    if (delta) return direction === 'asc' ? delta : -delta;
+    return Number(right.crewRep || 0) - Number(left.crewRep || 0);
+  });
+  const sortArrow = direction === 'asc' ? '↑' : '↓';
+  const comparisonText = crew.comparisonAvailable
+    ? `${escape(crew.referenceDate)} tarihindeki son kayıtla karşılaştırılıyor.`
+    : 'Dünkü kayıt oluştuğunda günlük karşılaştırma otomatik başlayacak.';
+  return `<div class="stats"><div class="card stat"><div class="stat-label">Crew toplam REP</div><div class="stat-value">${number(crew.crewRep)}</div><div class="stat-foot">Güncel toplam</div></div><div class="card stat"><div class="stat-label">Bugünkü REP</div><div class="stat-value">${signed(crew.dailyCrewRep)}</div><div class="stat-foot">Dünkü son kayda göre</div></div><div class="card stat"><div class="stat-label">Bugünkü etkinlik</div><div class="stat-value">${signed(crew.dailyEvents)}</div><div class="stat-foot">Tamamlanan etkinlik farkı</div></div><div class="card stat"><div class="stat-label">Takip edilen üye</div><div class="stat-value">${number(crew.members.length)}</div><div class="stat-foot">Crew kadrosu</div></div></div>${crew.error || crew.rosterError ? `<div class="notice error">${escape(crew.error || crew.rosterError)}</div>` : ''}<section class="card"><div class="card-header"><div><h3>Üye karşılaştırması</h3><p class="muted tiny">Son yenileme: ${date(crew.updatedAt)} · ${comparisonText}</p></div><a class="button subtle" href="${escape(crew.sourceUrl)}" target="_blank" rel="noopener noreferrer">Kaynağı aç ↗</a></div><div class="crew-legend" aria-label="REP karşılaştırma açıklaması"><span class="trend up">↑ Yeşil: düne göre REP kazandı</span><span class="trend down">↓ Kırmızı: bugün REP kazanmadı</span></div><div class="table-wrap"><table><thead><tr><th>ÜYE</th><th>CREW REP</th><th><button type="button" class="table-sort" data-crew-sort aria-label="Bugünkü REP değerine göre ${direction === 'asc' ? 'büyükten küçüğe' : 'küçükten büyüğe'} sırala">BUGÜN REP <span aria-hidden="true">${sortArrow}</span></button></th><th>LAST LOGIN</th><th>EVENTS COMPLETED</th><th>BUGÜN EVENT</th><th>DRIVER SCORE</th><th>BUGÜN SCORE</th></tr></thead><tbody>${members.map(member => `<tr><td><strong>${escape(member.name)}</strong><small class="muted">Level ${number(member.level)}</small></td><td>${number(member.crewRep)}</td><td>${crewTrend(member, crew.comparisonAvailable)}</td><td class="time">${escape(member.lastLogin || '—')}</td><td>${number(member.eventsCompleted)}</td><td>${signed(member.dailyEvents)}</td><td>${number(member.driverScore)}</td><td>${signed(member.dailyDriverScore)}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny crew-source">${crew.exactRoster ? 'Üye listesi NightRiderz Members bölümünden canlı alındı.' : 'Üye listesi son doğrulanan Crew kadrosundan, profil alanları NightRiderz API üzerinden canlı alındı.'}${crew.profileFailures ? ` ${number(crew.profileFailures)} profil son başarılı değeri korudu.` : ''}</p></section>`;
 }
 function renderCrew() { return `<section class="card"><div class="card-header"><div><h3>NightRiderz Crew #1636</h3><p class="muted">Crew REP, Last login, Events completed ve Driver score.</p></div><button class="button primary" id="refresh-crew">↻ Şimdi yenile</button></div></section><div id="crew-content">${crewBody(state.guild.crew)}</div>`; }
 async function loadCrew(force = false) {
@@ -114,7 +129,8 @@ function render() {
   $('#view-title').textContent = titles[state.view];
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  $('#view-content').innerHTML = (greeting() + ({ overview: renderOverview, community: renderCommunity, crew: renderCrew, responders: renderResponders, music: renderMusic, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, access: renderAccess })[state.view]()).replaceAll('/sağlık-asistanı', '/healthcare');
+  const page = ({ overview: renderOverview, community: renderCommunity, crew: renderCrew, responders: renderResponders, music: renderMusic, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, access: renderAccess })[state.view]();
+  $('#view-content').innerHTML = ((state.view === 'overview' ? greeting() : '') + page).replaceAll('/sağlık-asistanı', '/healthcare');
   if (['blacklist', 'tickets', 'tools', 'access'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
   if (state.view === 'overview') void loadLogs(false, true).catch(error => notice(error.message, true));
   if (state.view === 'logs') void loadLogs().catch(error => notice(error.message, true));
@@ -169,6 +185,7 @@ document.addEventListener('click', async event => {
     if (button.id === 'add-response') { if ($$('.response-row').length >= 50) throw new Error('En fazla 50 otomatik cevap ekleyebilirsiniz.'); $('#responses').insertAdjacentHTML('beforeend', responseRow()); $('#responses-empty').hidden = true; state.dirty = true; $('#responses').lastElementChild.querySelector('input').focus(); }
     if (button.classList.contains('remove-response')) { button.closest('.response-row').remove(); $('#responses-empty').hidden = Boolean($$('.response-row').length); state.dirty = true; }
     if (button.id === 'reload-logs') await loadLogs();
+    if (button.hasAttribute('data-crew-sort')) { state.crewSortDirection = state.crewSortDirection === 'desc' ? 'asc' : 'desc'; $('#crew-content').innerHTML = crewBody(state.guild.crew); return; }
     if (button.id === 'refresh-crew') { button.disabled = true; await loadCrew(true); notice('Crew REP ve profil bilgileri güncellendi.'); }
     if (button.id === 'more-logs') await loadLogs(true);
     if (button.id === 'publish-ticket') { await guildApi('tickets', { method: 'POST', body: '{}' }); notice('Destek düğmesi seçilen kanala yayımlandı.'); }

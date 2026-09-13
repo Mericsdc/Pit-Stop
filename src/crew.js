@@ -105,23 +105,27 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
         catch { profileFailures++; return { ...member, lastLogin: old?.lastLogin || null, eventsCompleted: old?.eventsCompleted || 0, driverScore: old?.driverScore || 0, level: old?.level || 0, profileAvailable: Boolean(old?.profileAvailable) }; }
       });
       const timestamp = now(), date = dayKey(timestamp), storedDay = store.getRecord(guildId, 'crew_daily', date);
-      const savedBaseline = storedDay?.baseline || [];
-      const savedByName = new Map(savedBaseline.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
-      const baseline = profiles.map(item => {
-        const saved = savedByName.get(item.name.toLocaleLowerCase('en-US'));
+      const previousDay = storedDay ? null : store.listRecords(guildId, 'crew_daily', 90).find(item => item.id < date && (Array.isArray(item.latest) || Array.isArray(item.baseline)));
+      const savedReference = storedDay?.reference || previousDay?.latest || previousDay?.baseline || [];
+      const referenceDate = storedDay?.referenceDate || previousDay?.id || null;
+      const referenceByName = new Map(savedReference.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
+      const reference = profiles.map(item => {
+        const saved = referenceByName.get(item.name.toLocaleLowerCase('en-US'));
         if (saved?.profileAvailable || !item.profileAvailable) return saved || { name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: false };
         return { name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: true };
       });
-      const baselineByName = new Map(baseline.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
+      const baselineByName = new Map(reference.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       const members = profiles.map(item => {
         const base = baselineByName.get(item.name.toLocaleLowerCase('en-US')) || item;
         const old = previousByName.get(item.name.toLocaleLowerCase('en-US')) || item;
-        return { ...item, dailyCrewRep: item.crewRep - numeric(base.crewRep), dailyEvents: item.eventsCompleted - numeric(base.eventsCompleted), dailyDriverScore: item.driverScore - numeric(base.driverScore), crewRepChange: item.crewRep - numeric(old.crewRep) };
+        const comparisonAvailable = Boolean(referenceDate && base);
+        return { ...item, comparisonAvailable, dailyCrewRep: comparisonAvailable ? item.crewRep - numeric(base.crewRep) : 0, dailyEvents: comparisonAvailable ? item.eventsCompleted - numeric(base.eventsCompleted) : 0, dailyDriverScore: comparisonAvailable ? item.driverScore - numeric(base.driverScore) : 0, crewRepChange: item.crewRep - numeric(old.crewRep) };
       }).sort((a, b) => b.dailyCrewRep - a.dailyCrewRep || b.crewRep - a.crewRep);
-      const totals = members.reduce((sum, item) => ({ crewRep: sum.crewRep + item.crewRep, dailyCrewRep: sum.dailyCrewRep + Math.max(0, item.dailyCrewRep), dailyEvents: sum.dailyEvents + Math.max(0, item.dailyEvents), dailyDriverScore: sum.dailyDriverScore + item.dailyDriverScore }), { crewRep: 0, dailyCrewRep: 0, dailyEvents: 0, dailyDriverScore: 0 });
-      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, date, exactRoster, profileFailures, rosterError, members, ...totals };
+      const totals = members.reduce((sum, item) => ({ crewRep: sum.crewRep + item.crewRep, dailyCrewRep: sum.dailyCrewRep + item.dailyCrewRep, dailyEvents: sum.dailyEvents + item.dailyEvents, dailyDriverScore: sum.dailyDriverScore + item.dailyDriverScore }), { crewRep: 0, dailyCrewRep: 0, dailyEvents: 0, dailyDriverScore: 0 });
+      const latest = profiles.map(item => ({ name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: item.profileAvailable }));
+      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, date, referenceDate, comparisonAvailable: Boolean(referenceDate), exactRoster, profileFailures, rosterError, members, ...totals };
       store.putRecord(guildId, 'crew_current', 'current', status);
-      store.putRecord(guildId, 'crew_daily', date, { baseline, updatedAt: timestamp, dailyCrewRep: totals.dailyCrewRep, dailyEvents: totals.dailyEvents, dailyDriverScore: totals.dailyDriverScore });
+      store.putRecord(guildId, 'crew_daily', date, { reference, referenceDate, latest, updatedAt: timestamp, dailyCrewRep: totals.dailyCrewRep, dailyEvents: totals.dailyEvents, dailyDriverScore: totals.dailyDriverScore });
       store.addLog(guildId, { type: 'crew.refreshed', actorId: null, message: `${members.length} Crew üyesinin REP ve profil istatistikleri güncellendi.`, details: { crewId: NRZ_CREW_ID, exactRoster, profileFailures, dailyCrewRep: totals.dailyCrewRep } });
       return status;
     })().catch(error => {

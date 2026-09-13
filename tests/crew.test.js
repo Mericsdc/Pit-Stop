@@ -14,7 +14,7 @@ test('NightRiderz roster and public profiles are normalized defensively', () => 
 
 test('crew tracker stores daily REP, event and score comparisons from live Members data', async t => {
   const store = createStore(':memory:'); t.after(() => store.close());
-  let time = Date.parse('2026-09-13T07:00:00Z'), round = 0;
+  let time = Date.parse('2026-09-12T07:00:00Z'), round = 0;
   const fetcher = async (_url, options) => {
     const body = JSON.parse(options.body);
     if (body.methodName === 'GetMembersRep') return Response.json(round ? [{ name: 'Pilot', reputation: '1,450' }, { name: 'Racer', reputation: '650' }] : [{ name: 'Pilot', reputation: '1,250' }, { name: 'Racer', reputation: '500' }]);
@@ -23,9 +23,11 @@ test('crew tracker stores daily REP, event and score comparisons from live Membe
   };
   const tracker = createCrewTracker(store, { allowedGuildIds: [GUILD], nightriderz: { userKey: 'reader', personaKey: 'persona' } }, { fetcher, now: () => time });
   await tracker.refresh(GUILD, true);
-  round = 1; time += 3600_000;
+  round = 1; time += 24 * 3600_000;
   const current = await tracker.refresh(GUILD, true);
   assert.equal(current.exactRoster, true);
+  assert.equal(current.referenceDate, '2026-09-12');
+  assert.equal(current.comparisonAvailable, true);
   assert.equal(current.dailyCrewRep, 350);
   assert.equal(current.dailyEvents, 2);
   assert.equal(current.dailyDriverScore, 20);
