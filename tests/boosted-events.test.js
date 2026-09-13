@@ -29,6 +29,9 @@ test('monitor announces a new event once and persists its latest status', async 
   assert.equal(sent.length, 1);
   assert.match(sent[0].content, /OUTLAWS/);
   assert.match(sent[0].content, /Class D/);
+  assert.match(sent[0].content, /https:\/\/nightriderz\.world\/leaderboard\/377/);
+  assert.match(sent[0].content, /\*\*Tür:\*\* Team Escape\n\*\*Bitiş:\*\* <t:1800:t> \(<t:1800:R>\)/);
+  assert.equal(store.getRecord(GUILD, 'boosted_event', 'current').event.endsAt, 1_800_000);
   raceId = '378';
   await monitor.refresh();
   assert.equal(sent.length, 2);
