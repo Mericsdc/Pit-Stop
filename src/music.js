@@ -105,13 +105,20 @@ function serializeTrack(track) {
   const info = track.info || {};
   let uri = null;
   try { uri = normalizeMusicQuery(info.uri).query; } catch { /* Unknown media URLs never appear in panel links. */ }
+  let artworkUrl = info.artworkUrl || null;
+  if (!artworkUrl && info.sourceName === 'youtube' && /^[\w-]{11}$/u.test(info.identifier || '')) artworkUrl = `https://i.ytimg.com/vi/${info.identifier}/hqdefault.jpg`;
+  if (artworkUrl) try {
+    const image = new URL(artworkUrl);
+    if (image.protocol !== 'https:' || !['i.ytimg.com', 'img.youtube.com', 'i.scdn.co'].includes(image.hostname)) artworkUrl = null;
+    else artworkUrl = image.href;
+  } catch { artworkUrl = null; }
   return {
     title: String(info.title || 'İsimsiz parça').slice(0, 200),
     author: String(info.author || '').slice(0, 200),
     duration: Number(info.duration ?? info.length) || 0,
     isStream: Boolean(info.isStream), uri,
     requesterId: track.requester?.id || null,
-    source: String(info.sourceName || 'youtube').slice(0, 30),
+    source: String(info.sourceName || 'youtube').slice(0, 30), artworkUrl,
   };
 }
 
@@ -147,6 +154,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
     const player = manager?.getPlayer(guildId);
     const settings = store.getSettings(guildId);
     const current = serializeTrack(player?.queue.current);
+    const lastPlayed = store.getRecord?.(guildId, 'music_last', 'current')?.track || null;
     if (current) current.position = Math.max(0, player.position || 0);
     return {
       configured, available: Boolean(manager?.useable && !closed), enabled: Boolean(settings.musicEnabled),
@@ -156,7 +164,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
       voiceChannelId: player?.voiceChannelId || null, textChannelId: player?.textChannelId || null,
       volume: player?.volume ?? settings.musicVolume ?? 50,
       position: player ? Math.max(0, player.position || 0) : 0,
-      current,
+      current, lastPlayed,
       queue: (player?.queue.tracks || []).slice(0, MAX_QUEUE).map(serializeTrack),
       maxQueue: MAX_QUEUE, maxPlaylist: MAX_PLAYLIST,
     };
@@ -266,6 +274,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
     manager.nodeManager.on('error', (_node, error) => failLog('music_node_error', error));
     manager.nodeManager.on('disconnect', () => logger('warn', 'music_node_disconnected'));
     manager.on('trackStart', (player, track) => {
+      store.putRecord?.(player.guildId, 'music_last', 'current', { track: serializeTrack(track), playedAt: Date.now() });
       record(player.guildId, 'music', `Çalıyor: ${String(track?.info?.title || 'İsimsiz parça').slice(0, 200)}`, track?.requester?.id);
     });
     manager.on('trackError', (player, track, payload) => {

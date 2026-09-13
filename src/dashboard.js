@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
@@ -45,7 +45,7 @@ async function readJson(request) {
 
 export async function validateGuildSettings(guild, member, patch, existing = {}) {
   if (!patch || Array.isArray(patch) || typeof patch !== 'object') throw httpError(400, 'Ayarlar bir nesne olmalı.');
-  for (const key of ['leaveChannelId', 'logChannelId', 'ticketChannelId', 'defenseChannelId']) {
+  for (const key of ['leaveChannelId', 'logChannelId', 'ticketChannelId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']) {
     if (!patch[key]) continue;
     const channel = await guild.channels.fetch(patch[key]);
     if (key === 'defenseChannelId' && channel?.type !== ChannelType.GuildText) throw httpError(400, 'Özel savunma thread’leri için normal bir metin kanalı seçin.');
@@ -74,13 +74,36 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
   if (next.defenseEnabled && (!next.defenseChannelId || !next.supportRoleId)) throw httpError(400, 'Savunma sistemi için ana kanal ve destek rolü seçin.');
 }
 
-export function createDashboard({ client, store, music, features, crew, config, logger = () => {}, fetcher = fetch }) {
+export function createDashboard({ client, store, music, features, crew, boostedEvents, config, logger = () => {}, fetcher = fetch }) {
   const sessions = new Map(), pendingStates = new Map(), limits = new Map();
   const base = new URL(config.publicUrl);
   const secure = base.protocol === 'https:';
   const configured = Boolean(config.clientSecret && config.sessionSecret);
+  const sessionStoreGuildId = config.allowedGuildIds?.[0] || config.clientId;
+  const sessionKey = createHash('sha256').update(config.sessionSecret || 'unconfigured').digest();
   const sign = value => createHmac('sha256', config.sessionSecret || '').update(value).digest('base64url');
   const cookie = (name, value, age) => `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secure ? '; Secure' : ''}`;
+  const seal = value => {
+    if (!value) return null;
+    const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', sessionKey, iv);
+    const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+    return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`;
+  };
+  const open = value => {
+    const [iv, tag, encrypted] = String(value || '').split('.');
+    if (!iv || !tag || !encrypted) throw new Error('Geçersiz oturum verisi.');
+    const decipher = createDecipheriv('aes-256-gcm', sessionKey, Buffer.from(iv, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+    return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8');
+  };
+  const saveSession = (id, session) => {
+    if (!sessionStoreGuildId) return;
+    store.putRecord(sessionStoreGuildId, 'panel_session', id, { user: session.user, csrf: session.csrf, accessToken: seal(session.accessToken), refreshToken: seal(session.refreshToken), accessExpires: session.accessExpires, expires: session.expires, seenGuilds: [...(session.seenGuilds || [])] });
+  };
+  const deleteSession = id => {
+    sessions.delete(id);
+    if (sessionStoreGuildId) store.deleteRecord(sessionStoreGuildId, 'panel_session', id);
+  };
   const json = (response, status, data) => {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify(data));
@@ -88,7 +111,10 @@ export function createDashboard({ client, store, music, features, crew, config, 
   const redirect = (response, location) => { response.writeHead(303, { Location: location }).end(); };
   const clean = () => {
     const now = Date.now();
-    for (const map of [sessions, pendingStates, limits]) for (const [key, value] of map) if (value.expires <= now) map.delete(key);
+    for (const map of [sessions, pendingStates, limits]) for (const [key, value] of map) if (value.expires <= now) {
+      map.delete(key);
+      if (map === sessions && sessionStoreGuildId) store.deleteRecord(sessionStoreGuildId, 'panel_session', key);
+    }
   };
   const cleanup = setInterval(clean, 60_000);
   cleanup.unref();
@@ -106,9 +132,34 @@ export function createDashboard({ client, store, music, features, crew, config, 
     if (!raw) return undefined;
     const [id, signature] = raw.split('.');
     if (!id || !constantEqual(signature, sign(id))) return undefined;
-    const session = sessions.get(id);
-    if (!session || session.expires <= Date.now()) { sessions.delete(id); return undefined; }
+    let session = sessions.get(id);
+    if (!session && sessionStoreGuildId) {
+      const saved = store.getRecord(sessionStoreGuildId, 'panel_session', id);
+      if (saved) try {
+        session = { user: saved.user, csrf: saved.csrf, accessToken: open(saved.accessToken), refreshToken: saved.refreshToken ? open(saved.refreshToken) : null, accessExpires: saved.accessExpires || saved.expires, expires: saved.expires, seenGuilds: new Set(saved.seenGuilds || []) };
+        sessions.set(id, session);
+      } catch { store.deleteRecord(sessionStoreGuildId, 'panel_session', id); }
+    }
+    if (!session || session.expires <= Date.now()) { deleteSession(id); return undefined; }
     return { id, ...session };
+  }
+
+  async function currentAccessToken(session) {
+    if (!session.accessExpires || session.accessExpires > Date.now() + 60_000) return session.accessToken;
+    if (!session.refreshToken) { deleteSession(session.id); throw httpError(401, 'Discord oturumunuzun süresi doldu. Yeniden giriş yapın.'); }
+    const tokenResponse = await fetcher('https://discord.com/api/v10/oauth2/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, grant_type: 'refresh_token', refresh_token: session.refreshToken }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!tokenResponse.ok) { deleteSession(session.id); throw httpError(401, 'Discord oturumunuz yenilenemedi. Yeniden giriş yapın.'); }
+    const token = await tokenResponse.json(), live = sessions.get(session.id) || session;
+    live.accessToken = token.access_token;
+    live.refreshToken = token.refresh_token || live.refreshToken;
+    live.accessExpires = Date.now() + Math.max(60, Number(token.expires_in) || 3600) * 1000;
+    sessions.set(session.id, live);
+    saveSession(session.id, live);
+    return live.accessToken;
   }
 
   async function authorizedGuild(guildId, session) {
@@ -126,7 +177,7 @@ export function createDashboard({ client, store, music, features, crew, config, 
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.discordapp.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.discordapp.com https://i.ytimg.com https://img.youtube.com https://i.scdn.co; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     if (secure) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(request.url, base);
@@ -156,11 +207,11 @@ export function createDashboard({ client, store, music, features, crew, config, 
         if (!configured) throw httpError(503, 'Panel girişi için Discord OAuth2 bilgileri henüz ayarlanmadı.');
         clean();
         if (pendingStates.size >= 1000) throw httpError(429, 'Lütfen daha sonra tekrar deneyin.');
-        const state = random();
-        pendingStates.set(state, { expires: Date.now() + 300_000 });
+        const state = random(), interactive = url.searchParams.get('interactive') === '1';
+        pendingStates.set(state, { expires: Date.now() + 300_000, interactive });
         response.setHeader('Set-Cookie', cookie('pitstop_state', state, 300));
         const target = new URL('https://discord.com/oauth2/authorize');
-        target.search = new URLSearchParams({ client_id: config.clientId, response_type: 'code', scope: 'identify guilds', redirect_uri: `${base.origin}/auth/callback`, state });
+        target.search = new URLSearchParams({ client_id: config.clientId, response_type: 'code', scope: 'identify guilds', redirect_uri: `${base.origin}/auth/callback`, state, ...(interactive ? {} : { prompt: 'none' }) });
         redirect(response, target.href);
         return;
       }
@@ -171,7 +222,7 @@ export function createDashboard({ client, store, music, features, crew, config, 
         pendingStates.delete(state);
         response.setHeader('Set-Cookie', cookie('pitstop_state', '', 0));
         if (!configured || !valid) throw httpError(400, 'Giriş doğrulaması geçersiz veya süresi doldu. Yeniden giriş yapın.');
-        if (url.searchParams.has('error') || !url.searchParams.get('code')) { redirect(response, '/?login=cancelled'); return; }
+        if (url.searchParams.has('error') || !url.searchParams.get('code')) { redirect(response, pending.interactive ? '/?login=cancelled' : '/auth/login?interactive=1'); return; }
         const tokenResponse = await fetcher('https://discord.com/api/v10/oauth2/token', {
           method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, grant_type: 'authorization_code', code: url.searchParams.get('code'), redirect_uri: `${base.origin}/auth/callback` }),
@@ -183,8 +234,11 @@ export function createDashboard({ client, store, music, features, crew, config, 
         clean();
         if (sessions.size >= 1000) throw httpError(503, 'Oturum kapasitesi dolu. Daha sonra deneyin.');
         const id = random();
-        const seconds = Math.max(1, Math.min(8 * 3600, Number(token.expires_in) || 3600));
-        sessions.set(id, { user: { id: user.id, username: user.username, name: user.global_name || user.username, avatar: user.avatar }, accessToken: token.access_token, csrf: random(), expires: Date.now() + seconds * 1000 });
+        const accessSeconds = Math.max(60, Number(token.expires_in) || 3600);
+        const seconds = token.refresh_token ? 30 * 24 * 3600 : accessSeconds;
+        const created = { user: { id: user.id, username: user.username, name: user.global_name || user.username, avatar: user.avatar }, accessToken: token.access_token, refreshToken: token.refresh_token || null, csrf: random(), accessExpires: Date.now() + accessSeconds * 1000, expires: Date.now() + seconds * 1000, seenGuilds: new Set() };
+        sessions.set(id, created);
+        saveSession(id, created);
         response.setHeader('Set-Cookie', [cookie('pitstop_state', '', 0), cookie('pitstop_session', `${id}.${sign(id)}`, seconds)]);
         redirect(response, '/');
         return;
@@ -194,7 +248,7 @@ export function createDashboard({ client, store, music, features, crew, config, 
         if (request.headers.origin !== base.origin || !constantEqual(request.headers['x-csrf-token'], session.csrf)) throw httpError(403, 'İstek doğrulanamadı. Sayfayı yenileyin.');
       }
       if (url.pathname === '/auth/logout' && request.method === 'POST') {
-        sessions.delete(session.id);
+        deleteSession(session.id);
         response.setHeader('Set-Cookie', cookie('pitstop_session', '', 0));
         json(response, 200, { ok: true });
         return;
@@ -204,11 +258,11 @@ export function createDashboard({ client, store, music, features, crew, config, 
         return;
       }
       if (url.pathname === '/api/guilds' && request.method === 'GET') {
-        const guilds = await discordApi('/users/@me/guilds', session.accessToken);
+        const guilds = await discordApi('/users/@me/guilds', await currentAccessToken(session));
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|crew))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|crew|faqs|boosted-event))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
@@ -217,7 +271,7 @@ export function createDashboard({ client, store, music, features, crew, config, 
         const me = guild.members.me;
         const botPermissions = me?.permissions;
         if (!session.seenGuilds?.has(guildId)) {
-          const live = sessions.get(session.id); live.seenGuilds ??= new Set(); live.seenGuilds.add(guildId);
+          const live = sessions.get(session.id); live.seenGuilds ??= new Set(); live.seenGuilds.add(guildId); saveSession(session.id, live);
           store.addLog(guildId, { type: 'panel.login', actorId: session.user.id, message: `${session.user.name} yönetim paneline giriş yaptı.`, details: { actorName: session.user.name } });
         }
         json(response, 200, {
@@ -225,7 +279,9 @@ export function createDashboard({ client, store, music, features, crew, config, 
           channels: [...guild.channels.cache.values()].filter(channel => [ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildCategory].includes(channel.type) && channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)).map(channel => ({ id: channel.id, name: channel.name, type: channel.type })),
           roles: [...guild.roles.cache.values()].filter(role => role.id !== guild.id).sort((a, b) => b.position - a.position).map(role => ({ id: role.id, name: role.name, color: role.hexColor, assignable: role.editable && !role.managed && member.permissions.has(PermissionFlagsBits.ManageRoles) && (member.id === guild.ownerId || member.roles.highest.comparePositionTo(role) > 0) })),
           settings: store.getSettings(guildId), music: music.getStatus(guildId),
+          boostedEvent: boostedEvents?.getStatus(guildId) || null,
           protection: features?.protectionStatus(), presenceEnabled: config.presenceEnabled || false,
+          viewerPermissions: { manageChannels: member.permissions.has(PermissionFlagsBits.ManageChannels) },
           bot: { ready: client.isReady(), ping: Math.max(0, Math.round(client.ws.ping)), uptime: Math.round(process.uptime()), permissions: Object.fromEntries(Object.entries({ manageRoles: PermissionFlagsBits.ManageRoles, manageMessages: PermissionFlagsBits.ManageMessages, connect: PermissionFlagsBits.Connect, speak: PermissionFlagsBits.Speak, moderateMembers: PermissionFlagsBits.ModerateMembers, viewAuditLog: PermissionFlagsBits.ViewAuditLog, manageChannels: PermissionFlagsBits.ManageChannels, createPrivateThreads: PermissionFlagsBits.CreatePrivateThreads, manageThreads: PermissionFlagsBits.ManageThreads }).map(([key, flag]) => [key, botPermissions?.has(flag) || false])) },
         });
         return;
@@ -263,6 +319,30 @@ export function createDashboard({ client, store, music, features, crew, config, 
         if (!crew) throw httpError(503, 'Crew takibi kullanılamıyor.');
         json(response, 200, await crew.refresh(guildId, true)); return;
       }
+      if (resource === 'boosted-event' && ['GET', 'POST'].includes(request.method)) {
+        if (!boostedEvents) throw httpError(503, 'Boosted Event izleyicisi kullanılamıyor.');
+        json(response, 200, request.method === 'POST' ? await boostedEvents.refresh(guildId, true) : boostedEvents.getStatus(guildId)); return;
+      }
+      if (resource === 'faqs') {
+        if (request.method === 'GET') { json(response, 200, store.listRecords(guildId, 'faq', 500)); return; }
+        const body = await readJson(request);
+        if (request.method === 'POST') {
+          if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 300) throw httpError(400, 'Soru 1–300 karakter arasında olmalı.');
+          if (typeof body.answer !== 'string' || !body.answer.trim() || body.answer.length > 1800) throw httpError(400, 'Cevap 1–1800 karakter arasında olmalı.');
+          try { json(response, 200, await features.publishFaq(guild, member, session.user, body.question, body.answer)); }
+          catch (error) { throw httpError(400, error.message); }
+          return;
+        }
+        if (request.method === 'DELETE') {
+          if (typeof body.id !== 'string' || !body.id) throw httpError(400, 'SSS kaydı kimliği gerekli.');
+          const item = store.getRecord(guildId, 'faq', body.id);
+          if (!item) throw httpError(404, 'SSS kaydı bulunamadı.');
+          store.deleteRecord(guildId, 'faq', body.id);
+          store.addLog(guildId, { type: 'faq.deleted', actorId: session.user.id, message: `${session.user.name} SSS kaydını sildi.`, details: { actorName: session.user.name, id: body.id, question: item.question } });
+          json(response, 200, { ok: true }); return;
+        }
+        throw httpError(405, 'Geçersiz SSS işlemi.');
+      }
       if (resource === 'blacklist') {
         if (request.method === 'GET') { json(response, 200, store.listRecords(guildId, 'blacklist', 10000)); return; }
         const body = await readJson(request);
@@ -274,7 +354,7 @@ export function createDashboard({ client, store, music, features, crew, config, 
           store.putRecord(guildId, 'blacklist', user.id, { name: user.globalName || user.username, reason: body.reason, source: 'manual', createdAt: Date.now(), addedBy: session.user.id, addedByName: session.user.name });
         } else if (request.method === 'DELETE') store.deleteRecord(guildId, 'blacklist', body.userId);
         else throw httpError(405, 'Geçersiz işlem.');
-        store.addLog(guildId, { type: 'blacklist.updated', actorId: session.user.id, message: `${session.user.name} blacklist kaydını ${request.method === 'POST' ? 'ekledi' : 'kaldırdı'}.`, details: { actorName: session.user.name, userId: body.userId, reason: body.reason } });
+        store.addLog(guildId, { type: 'blacklist.updated', actorId: session.user.id, message: `${session.user.name} kara liste kaydını ${request.method === 'POST' ? 'ekledi' : 'kaldırdı'}.`, details: { actorName: session.user.name, userId: body.userId, reason: body.reason } });
         json(response, 200, { ok: true }); return;
       }
       if (['reminders', 'tickets', 'cases'].includes(resource)) {
@@ -288,12 +368,17 @@ export function createDashboard({ client, store, music, features, crew, config, 
         if (request.method === 'DELETE') {
           const body = await readJson(request), item = store.getRecord(guildId, kind, body.id);
           if (!item) throw httpError(404, 'Kayıt bulunamadı.');
+          if (kind === 'ticket' && ![undefined, 'close', 'delete'].includes(body.action)) throw httpError(400, 'Geçersiz destek bileti işlemi.');
           if (kind === 'reminder' && item.userId !== session.user.id) throw httpError(403, 'Yalnızca kendi hatırlatıcınızı iptal edebilirsiniz.');
           if (kind === 'reminder') store.deleteRecord(guildId, kind, body.id);
           else {
             const channel = await guild.channels.fetch(item.id).catch(() => null);
             if (kind === 'case' && channel) { await channel.setLocked(true, 'Panelden kapatıldı'); await channel.setArchived(true, 'Panelden kapatıldı'); }
-            if (kind === 'ticket' && channel) await features.closeTicket(guildId, channel, { id: session.user.id, user: session.user, member });
+            if (kind === 'ticket' && body.action === 'delete') {
+              if (!channel) throw httpError(404, 'Destek kanalı bulunamadı.');
+              try { await features.deleteTicket(guildId, channel, { id: session.user.id, user: session.user, member }); }
+              catch (error) { throw httpError(403, error.message); }
+            } else if (kind === 'ticket' && channel) await features.closeTicket(guildId, channel, { id: session.user.id, user: session.user, member });
             else store.putRecord(guildId, kind, item.id, { ...item, status: 'closed', closedAt: Date.now(), closedBy: session.user.id, closedByName: session.user.name });
           }
           if (kind !== 'ticket') store.addLog(guildId, { type: `${kind}.closed`, actorId: session.user.id, message: `${session.user.name} kaydı kapattı.`, details: { actorName: session.user.name, id: body.id } });

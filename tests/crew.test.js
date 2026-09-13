@@ -29,6 +29,7 @@ test('crew tracker stores daily REP, event and score comparisons from live Membe
   assert.equal(current.referenceDate, '2026-09-12');
   assert.equal(current.comparisonAvailable, true);
   assert.equal(current.dailyCrewRep, 350);
+  assert.equal(current.instantCrewRep, 350);
   assert.equal(current.dailyEvents, 2);
   assert.equal(current.dailyDriverScore, 20);
   assert.equal(current.members.find(member => member.name === 'Pilot').dailyCrewRep, 200);

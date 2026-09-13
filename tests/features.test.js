@@ -113,6 +113,34 @@ test('ticket close button lets only the ticket owner or support staff close once
   await Promise.all(f.client.listeners('interactionCreate').map(fn => fn(interaction)));
   assert.match(replies[1], /zaten kapalı/);
 });
+test('ticket delete button requires staff and Manage Channels permission', async t => {
+  const f = fixture(t), deleted = [];
+  const ticketChannel = { id: C, delete: async reason => deleted.push(reason) };
+  f.store.putRecord(G, 'ticket', C, { userId: U, name: 'Pilot', createdAt: f.now(), status: 'open' });
+  f.features.install();
+  const replies = [];
+  const interaction = { customId: 'ticket:delete', guildId: G, channel: ticketChannel, channelId: C, user: f.user, member: f.member, isButton: () => true, deferReply: async () => {}, editReply: async text => replies.push(text) };
+  await Promise.all(f.client.listeners('interactionCreate').map(fn => fn(interaction)));
+  assert.equal(deleted.length, 0);
+  assert.match(replies[0], /yalnızca Kanalları Yönet/);
+  f.member.permissions = new PermissionsBitField(P.ManageGuild | P.ManageChannels);
+  await Promise.all(f.client.listeners('interactionCreate').map(fn => fn(interaction)));
+  assert.equal(deleted.length, 1);
+  assert.equal(f.store.getRecord(G, 'ticket', C).status, 'deleted');
+  assert.equal(f.store.getLogs(G)[0].type, 'ticket.deleted');
+});
+test('FAQ publishing requires a manager and records the Discord message', async t => {
+  const f = fixture(t), messages = [];
+  f.store.updateSettings(G, { faqEnabled: true, faqChannelId: C });
+  f.channel.send = async payload => { messages.push(payload); return { id: 'message-1' }; };
+  await assert.rejects(f.features.publishFaq(f.guild, f.member, f.user, 'Nasıl katılırım?', 'Duyuru bağlantısını kullan.'), /Sunucuyu Yönet/);
+  f.member.permissions = new PermissionsBitField(P.ManageGuild);
+  const item = await f.features.publishFaq(f.guild, f.member, f.user, 'Nasıl katılırım?', 'Duyuru bağlantısını kullan.');
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0].allowedMentions, { parse: [], repliedUser: false });
+  assert.equal(item.messageId, 'message-1');
+  assert.equal(f.store.getLogs(G)[0].type, 'faq.published');
+});
 test('health command uses an ASCII name and support-role ticket close remains visible', t => {
   const f = fixture(t), definitions = Object.fromEntries(f.features.commands.map(item => [item.data.toJSON().name, item.data.toJSON()]));
   assert.ok(definitions.healthcare);

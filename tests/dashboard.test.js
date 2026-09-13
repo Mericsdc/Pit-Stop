@@ -14,11 +14,11 @@ const OTHER_GUILD = '1400000000000000005';
 const PUBLIC_ORIGIN = 'https://pit-stop.example';
 const SECRETS = ['BOT_TOKEN_TEST_abc', 'OAUTH_SECRET_TEST_abc', 'SESSION_SECRET_TEST_abcdefghijklmnopqrstuvwxyz', 'ACCESS_TOKEN_TEST_abc'];
 const adminPermissions = PermissionFlagsBits.ManageGuild | PermissionFlagsBits.ManageRoles
-  | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.SendMessages | PermissionFlagsBits.EmbedLinks;
+  | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.SendMessages | PermissionFlagsBits.EmbedLinks | PermissionFlagsBits.ManageChannels;
 
 async function setup(t, configOverrides = {}) {
   const store = createStore(':memory:');
-  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [], crew: [], ticketCloses: [] };
+  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [], crew: [], ticketCloses: [], ticketDeletes: [] };
   const member = {
     id: USER, permissions: new PermissionsBitField(adminPermissions),
     roles: { highest: { comparePositionTo: (role) => 10 - role.position } },
@@ -63,6 +63,11 @@ async function setup(t, configOverrides = {}) {
       calls.ticketCloses.push({ guildId, channelId: ticketChannel.id, actorId: actor.id });
       const item = store.getRecord(guildId, 'ticket', ticketChannel.id);
       store.putRecord(guildId, 'ticket', ticketChannel.id, { ...item, status: 'closed', closedBy: actor.id, closedAt: Date.now() });
+    },
+    deleteTicket: async (guildId, ticketChannel, actor) => {
+      calls.ticketDeletes.push({ guildId, channelId: ticketChannel.id, actorId: actor.id });
+      const item = store.getRecord(guildId, 'ticket', ticketChannel.id);
+      store.putRecord(guildId, 'ticket', ticketChannel.id, { ...item, status: 'deleted', deletedBy: actor.id, deletedAt: Date.now() });
     },
   };
   const crew = {
@@ -111,8 +116,8 @@ async function setup(t, configOverrides = {}) {
   });
 
   const request = (path, options = {}) => fetch(`${origin}${path}`, { redirect: 'manual', ...options });
-  async function beginLogin() {
-    const response = await request('/auth/login');
+  async function beginLogin(interactive = false) {
+    const response = await request(interactive ? '/auth/login?interactive=1' : '/auth/login');
     assert.equal(response.status, 303);
     const target = new URL(response.headers.get('location'));
     const stateCookie = response.headers.getSetCookie().find((value) => value.startsWith('pitstop_state='));
@@ -137,25 +142,38 @@ async function setup(t, configOverrides = {}) {
     headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
-  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music, features, crew };
+  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music, features, crew, client, fetcher };
 }
 
 function noSecrets(value) {
   for (const secret of SECRETS) assert.equal(value.includes(secret), false, 'A private credential was exposed');
 }
 
-test('OAuth HTTP flow issues protected state/session cookies and supports first-time consent', async (t) => {
+test('OAuth HTTP flow issues protected state/session cookies and attempts silent reuse first', async (t) => {
   const fixture = await setup(t);
   const session = await fixture.login();
   assert.equal(session.target.origin, 'https://discord.com');
   assert.equal(session.target.searchParams.get('scope'), 'identify guilds');
   assert.equal(session.target.searchParams.get('redirect_uri'), `${PUBLIC_ORIGIN}/auth/callback`);
-  assert.notEqual(session.target.searchParams.get('prompt'), 'none');
+  assert.equal(session.target.searchParams.get('prompt'), 'none');
   assert.ok(session.state.length >= 32);
   for (const attribute of ['HttpOnly', 'SameSite=Lax', 'Secure']) assert.ok(session.sessionCookie.includes(attribute));
   assert.deepEqual(Object.keys(session.me).sort(), ['csrf', 'installationOwner', 'user']);
   assert.equal(session.me.user.id, USER);
   noSecrets(JSON.stringify(session.me));
+  const saved = fixture.store.listRecords(BOT, 'panel_session');
+  assert.equal(saved.length, 1);
+  noSecrets(JSON.stringify(saved));
+});
+
+test('encrypted panel sessions survive a dashboard restart', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  const restarted = createDashboard({ client: fixture.client, store: fixture.store, music: fixture.music, features: fixture.features, crew: fixture.crew, config: fixture.config, fetcher: fixture.fetcher });
+  restarted.listen(0, '127.0.0.1'); await once(restarted, 'listening');
+  const response = await fetch(`http://127.0.0.1:${restarted.address().port}/api/me`, { headers: { Cookie: session.cookie } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).user.id, USER);
+  const closed = once(restarted, 'close'); restarted.close(); restarted.closeAllConnections(); await closed;
 });
 
 test('OAuth states cannot be replayed after a successful callback', async (t) => {
@@ -186,7 +204,11 @@ test('OAuth denial creates no session and consumes the state', async (t) => {
   const initial = await fixture.beginLogin();
   const response = await fixture.request(`/auth/callback?state=${initial.state}&error=access_denied`, { headers: { Cookie: initial.cookie } });
   assert.equal(response.status, 303);
-  assert.equal(response.headers.get('location'), '/?login=cancelled');
+  assert.equal(response.headers.get('location'), '/auth/login?interactive=1');
+  const interactive = await fixture.beginLogin(true);
+  const cancelled = await fixture.request(`/auth/callback?state=${interactive.state}&error=access_denied`, { headers: { Cookie: interactive.cookie } });
+  assert.equal(cancelled.status, 303);
+  assert.equal(cancelled.headers.get('location'), '/?login=cancelled');
   assert.equal(response.headers.getSetCookie().some((value) => value.startsWith('pitstop_session=')), false);
   assert.equal(fixture.calls.discord.length, 0);
 });
@@ -229,6 +251,15 @@ test('panel ticket close uses the same audited close path as Discord', async t =
   assert.equal(response.status, 200);
   assert.equal(fixture.store.getRecord(GUILD, 'ticket', CHANNEL).status, 'closed');
   assert.deepEqual(fixture.calls.ticketCloses, [{ guildId: GUILD, channelId: CHANNEL, actorId: USER }]);
+});
+
+test('panel ticket channel deletion is routed through the staff-only feature guard', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  fixture.store.putRecord(GUILD, 'ticket', CHANNEL, { userId: USER, status: 'closed', createdAt: Date.now() });
+  const response = await fixture.request(`/api/guilds/${GUILD}/tickets`, { method: 'DELETE', headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: CHANNEL, action: 'delete' }) });
+  assert.equal(response.status, 200);
+  assert.equal(fixture.store.getRecord(GUILD, 'ticket', CHANNEL).status, 'deleted');
+  assert.deepEqual(fixture.calls.ticketDeletes, [{ guildId: GUILD, channelId: CHANNEL, actorId: USER }]);
 });
 
 test('unauthenticated APIs and tampered session cookies are rejected', async (t) => {

@@ -15,26 +15,27 @@
   <aside class="sidebar">
     <a class="brand" href="/"><img src="/assets/logo.webp" alt="" width="48" height="48"><span>PIT<span class="accent">-STOP</span><small>KONTROL MERKEZİ</small></span></a>
     <div class="sidebar-caption">SUNUCU YÖNETİMİ</div>
-    <nav aria-label="Panel bölümleri">
+    <nav id="sidebar-nav" aria-label="Panel bölümleri">
       <button data-view="overview" class="nav-button active"><span aria-hidden="true">◈</span> Genel bakış</button>
-      <button data-view="community" class="nav-button"><span aria-hidden="true">♧</span> Üyeler & roller</button>
-      <button data-view="crew" class="nav-button"><span aria-hidden="true">🏁</span> Crew REP takibi</button>
+      <button data-view="community" class="nav-button"><span aria-hidden="true">♧</span> Üyeler ve roller</button>
+      <button data-view="crew" class="nav-button"><span aria-hidden="true">🏁</span> Ekip REP takibi</button>
       <button data-view="responders" class="nav-button"><span aria-hidden="true">⌘</span> Otomatik cevaplar</button>
       <button data-view="music" class="nav-button"><span aria-hidden="true">♫</span> Müzik istasyonu</button>
       <button data-view="logs" class="nav-button"><span aria-hidden="true">≡</span> Olay kayıtları</button>
-      <button data-view="blacklist" class="nav-button"><span aria-hidden="true">⊘</span> Üye blacklist</button>
-      <button data-view="protection" class="nav-button"><span aria-hidden="true">◇</span> Spam & phishing</button>
-      <button data-view="tickets" class="nav-button"><span aria-hidden="true">✉</span> Destek & savunma</button>
-      <button data-view="tools" class="nav-button"><span aria-hidden="true">◷</span> Hatırlatıcı & sağlık</button>
+      <button data-view="blacklist" class="nav-button"><span aria-hidden="true">⊘</span> Üye kara listesi</button>
+      <button data-view="protection" class="nav-button"><span aria-hidden="true">◇</span> Spam ve oltalama</button>
+      <button data-view="tickets" class="nav-button"><span aria-hidden="true">✉</span> Destek ve savunma</button>
+      <button data-view="tools" class="nav-button"><span aria-hidden="true">◷</span> Hatırlatıcı ve sağlık</button>
+      <button data-view="faq" class="nav-button"><span aria-hidden="true">?</span> Sık sorulan sorular</button>
       <button data-view="access" class="nav-button"><span aria-hidden="true">⌁</span> Yetkilendirme</button>
       <button data-view="settings" class="nav-button"><span aria-hidden="true">⚙</span> Bot ayarları</button>
     </nav>
     <div class="sidebar-bottom"><span class="status-dot" id="connection-dot"></span><span id="connection-label">Bağlantı kontrol ediliyor</span><small>Pit-Stop v1.0</small></div>
   </aside>
   <div class="shell">
-    <header class="topbar"><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><label class="sr-only" for="guild-select">Sunucu seç</label><select id="guild-select" hidden></select><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
+    <header class="topbar"><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><label class="sr-only" for="theme-select">Görünüm teması</label><select id="theme-select" aria-label="Görünüm teması"><option value="dark">Koyu tema</option><option value="light">Aydınlık tema</option></select><label class="sr-only" for="guild-select">Sunucu seç</label><select id="guild-select" hidden></select><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
     <main id="main" tabindex="-1">
-      <section class="hero"><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p><span class="hero-tag">NIGHTRIDERZ</span></div></section>
+      <section class="hero" id="hero"><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p><span class="hero-tag">NIGHTRIDERZ</span></div></section>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <section id="login-panel" class="login-panel card"><div class="section-kicker">GÜVENLİ GİRİŞ</div><h2>Garajın anahtarı Discord hesabın.</h2><p>Sunucuyu Yönet yetkinizin olduğu ve Pit-Stop’un eklendiği sunucular burada görünür.</p><a class="button primary" id="login-link" href="/auth/login">Discord ile giriş yap <span aria-hidden="true">↗</span></a><p id="setup-note" class="muted"></p></section>
       <section id="workspace" hidden>

@@ -17,6 +17,10 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
   const settings = guildId => store.getSettings(guildId);
   const hasStaff = (member, s) => member.permissions.has(P.ManageGuild) || Boolean(s.supportRoleId && member.roles.cache.has(s.supportRoleId));
   const ticketOverwrites = (guildId, userId, supportRoleId) => [{ id: guildId, deny: [P.ViewChannel] }, { id: userId, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AttachFiles] }, { id: supportRoleId, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory] }, { id: client.user.id, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.ManageChannels] }];
+  const ticketControls = () => new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('ticket:close').setLabel('Bileti Kapat').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('ticket:delete').setLabel('Kanalı Sil').setStyle(ButtonStyle.Danger),
+  );
   const guildAllowed = id => {
     const home = config.allowedGuildIds?.[0];
     const allowed = home ? store.getRecord(home, 'install_policy', 'current')?.guildIds || config.allowedGuildIds : [];
@@ -97,6 +101,22 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
     store.putRecord(guild.id, 'ticket_panel', 'current', { channelId: channel.id, messageId: message.id });
     record(guild.id, 'ticket.published', 'Destek Talebi Oluştur düğmesi yayımlandı.', actorId, { channelId: channel.id });
   }
+  async function publishFaq(guild, member, user, question, answer) {
+    const s = settings(guild.id);
+    if (!member?.permissions?.has(P.ManageGuild)) throw new Error('SSS yayımlamak için Sunucuyu Yönet yetkisi gerekir.');
+    if (!s.faqEnabled) throw new Error('SSS sistemi kapalı. Bot ayarlarından etkinleştirin.');
+    const channelId = s.faqChannelId || config.boostedEventChannelId;
+    if (!channelId) throw new Error('SSS için bir Discord kanalı seçin.');
+    const cleanQuestion = short(question, 300).trim(), cleanAnswer = short(answer, 1800).trim();
+    if (!cleanQuestion || !cleanAnswer) throw new Error('Soru ve cevap boş bırakılamaz.');
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel?.isTextBased?.()) throw new Error('SSS kanalı bulunamadı veya mesaj gönderilemiyor.');
+    const id = randomUUID();
+    const message = await channel.send({ content: `❓ **${cleanQuestion}**\n${cleanAnswer}`, allowedMentions: noMentions });
+    store.putRecord(guild.id, 'faq', id, { question: cleanQuestion, answer: cleanAnswer, channelId, messageId: message.id, createdAt: now(), createdBy: user.id, createdByName: userLabel(user) });
+    record(guild.id, 'faq.published', `${userLabel(user)} bir SSS cevabı yayımladı.`, user.id, { actorName: userLabel(user), faqId: id, channelId, messageId: message.id, question: cleanQuestion, answer: cleanAnswer });
+    return store.getRecord(guild.id, 'faq', id);
+  }
   async function closeTicket(guildId, channel, actor, { allowOwner = false } = {}) {
     const item = store.getRecord(guildId, 'ticket', channel.id);
     if (!item) throw new Error('Bu kanal bir destek talebi değil.');
@@ -106,6 +126,16 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
     store.putRecord(guildId, 'ticket', channel.id, { ...item, status: 'closed', closedAt: now(), closedBy: actor.id, closedByName: userLabel(actor.user || actor) });
     record(guildId, 'ticket.closed', `${userLabel(actor.user || actor)} destek talebini kapattı.`, actor.id, { actorName: userLabel(actor.user || actor), channelId: channel.id, userId: item.userId });
     return store.getRecord(guildId, 'ticket', channel.id);
+  }
+  async function deleteTicket(guildId, channel, actor) {
+    const item = store.getRecord(guildId, 'ticket', channel.id);
+    if (!item) throw new Error('Bu kanal bir destek bileti değil.');
+    if (!hasStaff(actor.member, settings(guildId)) || !actor.member?.permissions?.has(P.ManageChannels)) throw new Error('Kanalı yalnızca Kanalları Yönet iznine sahip destek yetkilileri silebilir.');
+    const channelId = channel.id;
+    await channel.delete(`Pit-Stop: ${userLabel(actor.user || actor)} destek kanalını sildi`);
+    store.putRecord(guildId, 'ticket', channelId, { ...item, status: 'deleted', deletedAt: now(), deletedBy: actor.id, deletedByName: userLabel(actor.user || actor) });
+    record(guildId, 'ticket.deleted', `${userLabel(actor.user || actor)} destek kanalını sildi.`, actor.id, { actorName: userLabel(actor.user || actor), channelId, userId: item.userId });
+    return store.getRecord(guildId, 'ticket', channelId);
   }
   async function interactionHandler(i) {
     if (i.isButton?.() && i.customId === 'ticket:create') {
@@ -124,8 +154,7 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
           permissionOverwrites, reason: 'Pit-Stop özel destek talebi' });
         await channel.permissionOverwrites?.set?.(permissionOverwrites, 'Pit-Stop bilet gizliliğini uygula');
         store.putRecord(i.guildId, 'ticket', channel.id, { userId: i.user.id, name: userLabel(i.user), createdAt: now(), status: 'open', closeControlPublished: true, privacyVerifiedAt: now() });
-        const closeRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket:close').setLabel('Bileti Kapat').setStyle(ButtonStyle.Danger));
-        await channel.send({ content: `Hoş geldiniz ${userLabel(i.user)}. Talebinizi yazabilirsiniz. Siz veya yetkililer aşağıdaki düğmeyle; yetkililer ayrıca /bilet-kapat komutuyla kapatabilir. Bu odadaki mesajlar panel günlüğüne kaydedilir.`, components: [closeRow], allowedMentions: noMentions });
+        await channel.send({ content: `Hoş geldiniz ${userLabel(i.user)}. Talebinizi yazabilirsiniz. Bilet sahibi veya destek yetkilileri bileti kapatabilir; kanalı yalnızca Kanalları Yönet iznine sahip yetkililer silebilir. Bu odadaki mesajlar panel günlüğüne kaydedilir.`, components: [ticketControls()], allowedMentions: noMentions });
         record(i.guildId, 'ticket.opened', `${userLabel(i.user)} destek talebi açtı.`, i.user.id, { channelId: channel.id });
         await i.editReply(`Özel destek kanalınız: <#${channel.id}>`);
       } finally { locks.delete(key); }
@@ -135,6 +164,10 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
         await closeTicket(i.guildId, i.channel, { id: i.user.id, user: i.user, member: i.member }, { allowOwner: true });
         await i.editReply('Talep kapatıldı. Kanal ve konuşma kayıtları korundu.');
       } catch (error) { await i.editReply(error.message); }
+    } else if (i.isButton?.() && i.customId === 'ticket:delete') {
+      await i.deferReply(ephemeral);
+      try { await deleteTicket(i.guildId, i.channel, { id: i.user.id, user: i.user, member: i.member }); }
+      catch (error) { await i.editReply(error.message); }
     } else if (i.isButton?.() && i.customId.startsWith('defense:')) {
       const [, guildId, id] = i.customId.split(':');
       const item = store.getRecord(guildId, 'case', id);
@@ -258,8 +291,7 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
           await channel.permissionOverwrites.set(ticketOverwrites(guild.id, item.userId, s.supportRoleId), 'Pit-Stop bilet gizliliğini onar');
           let updated = item;
           if (!item.closeControlPublished) {
-            const closeRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket:close').setLabel('Bileti Kapat').setStyle(ButtonStyle.Danger));
-            await channel.send({ content: 'Bu destek talebini sahibi veya destek yetkilileri aşağıdaki düğmeyle kapatabilir.', components: [closeRow], allowedMentions: noMentions });
+            await channel.send({ content: 'Bilet sahibi veya destek yetkilileri bileti kapatabilir; kanalı yalnızca Kanalları Yönet iznine sahip yetkililer silebilir.', components: [ticketControls()], allowedMentions: noMentions });
             updated = { ...updated, closeControlPublished: true };
           }
           if (!item.privacyVerifiedAt) {
@@ -273,7 +305,7 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
     void refreshFeed(); timer = setInterval(() => void tick().catch(() => logger('error', 'feature_tick_failed')), 15000); timer.unref();
     refreshTimer = setInterval(() => void refreshFeed(), 15 * 60000); refreshTimer.unref();
   }
-  return { commands, install, initialize, tick, processMessage, protectionStatus, publishTicket, openDefense, closeTicket,
+  return { commands, install, initialize, tick, processMessage, protectionStatus, publishTicket, publishFaq, openDefense, closeTicket, deleteTicket,
     close() { clearInterval(timer); clearInterval(refreshTimer); for (const [event, listener] of listeners) client.off(event, listener); sessions.clear(); },
   };
 }

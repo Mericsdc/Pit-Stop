@@ -1,5 +1,5 @@
 export function userLabel(user) {
-  return user?.displayName || user?.globalName || user?.username || user?.user?.globalName || user?.user?.username || 'Bilinmeyen kullanıcı';
+  return user?.displayName || user?.globalName || user?.name || user?.username || user?.user?.globalName || user?.user?.username || 'Bilinmeyen kullanıcı';
 }
 
 export function installAuditIdentity(client, store) {
