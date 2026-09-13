@@ -12,6 +12,17 @@ export class MusicError extends Error {
   constructor(message, status = 400) { super(message); this.name = 'MusicError'; this.status = status; this.userMessage = message; }
 }
 
+export function playbackFailure(payload) {
+  // Classify upstream errors without exposing token-bearing URLs or raw provider responses.
+  const raw = [payload?.exception?.message, payload?.exception?.cause].filter(v => typeof v === 'string').join(' ').replace(/https?:\/\/\S+/gi, '').toLowerCase();
+  if (/oauth|sign.?in|login|authentication|confirm.*bot/.test(raw)) return { code: 'LOGIN_REQUIRED', message: 'YouTube oturumu gerekiyor veya oturum yenilenemiyor.' };
+  if (/cipher|signature|sig function|player script/.test(raw)) return { code: 'PLAYER_COMPATIBILITY', message: 'YouTube ses bağlantısı hazırlanamadı; müzik bileşeni kontrol edilmeli.' };
+  if (/429|rate.?limit|too many/.test(raw)) return { code: 'RATE_LIMIT', message: 'Müzik kaynağının istek sınırına ulaşıldı. Bir süre sonra tekrar deneyin.' };
+  if (/403|unavailable|private|not available|copyright|restricted/.test(raw)) return { code: 'SOURCE_UNAVAILABLE', message: 'Bu parçanın ses kaynağına erişilemiyor. Başka bir kayıt deneyin.' };
+  if (/timeout|timed out|connection/.test(raw)) return { code: 'SOURCE_CONNECTION', message: 'Ses kaynağı bağlantısı kesildi veya zaman aşımına uğradı.' };
+  return { code: 'PLAYBACK_FAILED', message: 'Ses akışı başlatılamadı. Başka bir kayıt deneyin; sorun sürerse yönetici müzik servisini kontrol etmelidir.' };
+}
+
 /** Only canonical media URLs reach Lavalink; no redirects, arbitrary sources or local files. */
 export function normalizeMusicQuery(input, source = 'ytmsearch') {
   if (typeof input !== 'string' || !input.trim() || input.length > 500 || /[\u0000-\u001f\u007f]/.test(input)) {
@@ -111,7 +122,8 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
   const manager = suppliedManager || (configured ? new LavalinkManager({
     nodes: [{ id: 'pit-stop', host: nodeConfig.host, port: nodeConfig.port || 2333,
       authorization: nodeConfig.password, secure: Boolean(nodeConfig.secure),
-      retryAmount: 60, retryDelay: 10_000, requestSignalTimeoutMS: 15_000 }],
+      // Keep reconnecting after maintenance; the client bounds its retry history to 1000 entries.
+      retryAmount: Number.MAX_SAFE_INTEGER, retryDelay: 30_000, requestSignalTimeoutMS: 15_000 }],
     sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard.send(payload),
     client: { id: config.clientId, username: 'Pit-Stop' }, autoSkip: true,
     playerOptions: { defaultSearchPlatform: 'ytmsearch', volumeDecrementer: 1,
@@ -256,9 +268,10 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
     manager.on('trackStart', (player, track) => {
       record(player.guildId, 'music', `Çalıyor: ${String(track?.info?.title || 'İsimsiz parça').slice(0, 200)}`, track?.requester?.id);
     });
-    manager.on('trackError', (player, track) => {
-      const message = `Parça çalınamadı: ${String(track?.info?.title || 'İsimsiz parça').slice(0, 180)}. Kaynak erişimi kısıtlı olabilir; sıradaki parçaya geçiliyor.`;
-      record(player.guildId, 'music_error', message, track?.requester?.id, { actorName: track?.requester?.username, track: track?.info?.title, url: track?.info?.uri });
+    manager.on('trackError', (player, track, payload) => {
+      const failure = playbackFailure(payload);
+      const message = `Parça çalınamadı: ${String(track?.info?.title || 'İsimsiz parça').slice(0, 180)}. ${failure.message}`;
+      record(player.guildId, 'music_error', message, track?.requester?.id, { actorName: track?.requester?.username, track: track?.info?.title, url: track?.info?.uri, errorCode: failure.code });
       const textChannel = client.channels?.cache.get(player.textChannelId);
       if (textChannel?.isTextBased()) textChannel.send({ content: message, allowedMentions: { parse: [] } }).catch(error => failLog('music_notice_failed', error));
     });

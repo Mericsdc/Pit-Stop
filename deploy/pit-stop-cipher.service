@@ -1,0 +1,27 @@
+[Unit]
+Description=Pit-Stop YouTube signature service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pit-stop-cipher
+Group=pit-stop-cipher
+WorkingDirectory=/opt/pit-stop-cipher
+EnvironmentFile=/etc/pit-stop-cipher/cipher.env
+Environment=DENO_DIR=/var/lib/pit-stop-cipher/deno
+Environment=XDG_CACHE_HOME=/var/lib/pit-stop-cipher/cache
+ExecStart=/opt/pit-stop-deno/deno run --cached-only --frozen --allow-net --allow-read=/opt/pit-stop-cipher,/var/lib/pit-stop-cipher --allow-write=/var/lib/pit-stop-cipher --allow-env server.ts
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=pit-stop-cipher
+ReadWritePaths=/var/lib/pit-stop-cipher
+MemoryMax=768M
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

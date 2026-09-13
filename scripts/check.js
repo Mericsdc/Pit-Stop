@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 let files = 0;
-for (const directory of ['src', 'scripts', 'tests', 'public']) {
+for (const directory of ['src', 'scripts', 'tests', 'public', 'deploy']) {
   for (const entry of readdirSync(directory, { recursive: true })) {
-    if (!entry.endsWith('.js')) continue;
+    if (!/\.m?js$/.test(entry)) continue;
     const file = join(directory, entry);
     const result = spawnSync(process.execPath, ['--check', file], { stdio: 'inherit' });
     if (result.error || result.status !== 0) process.exit(result.status || 1);

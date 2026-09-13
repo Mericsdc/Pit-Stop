@@ -13,7 +13,9 @@ WorkingDirectory=/var/lib/pit-stop-music
 StateDirectory=pit-stop-music
 StateDirectoryMode=0750
 EnvironmentFile=/etc/pit-stop-music/pit-stop-music.env
-ExecStart=/usr/bin/java -Xms128m -Xmx512m -jar /opt/pit-stop-music/Lavalink.jar --spring.config.location=file:/opt/pit-stop-music/application.yml --server.address=127.0.0.1
+ExecStart=/usr/bin/java -Xms128m -Xmx512m -jar /opt/pit-stop-music/Lavalink.jar --spring.config.location=file:/opt/pit-stop-music/application.yml --server.address=127.0.0.1 --plugins.youtube.oauth.enabled=false
+ExecStartPost=/usr/local/bin/node /opt/pit-stop-music/music-oauth.mjs
+TimeoutStartSec=240s
 Restart=on-failure
 RestartSec=10s
 TimeoutStopSec=30s

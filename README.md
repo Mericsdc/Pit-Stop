@@ -101,6 +101,16 @@ Spotify için `SPOTIFY_ENABLED=true`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRE
 
 YouTube bazı sunucu IP’lerinde oturum/istek doğrulaması isteyebilir. Gerekirse youtube-source’ın [resmi kılavuzuna](https://github.com/lavalink-devs/youtube-source) göre `YOUTUBE_OAUTH_ENABLED`, `YOUTUBE_REFRESH_TOKEN`, `YOUTUBE_PO_TOKEN`, `YOUTUBE_VISITOR_DATA` ayarlayın. Canlı ses testi yapılmadan yalnızca kod/test sonuçlarıyla oynatmanın çalıştığı varsayılmamalıdır.
 
+YouTube oynatıcı imzası uyumluluğu için aynı sunucuda [yt-cipher](https://github.com/kikkia/yt-cipher) kurulabilir:
+
+```sh
+sudo bash deploy/install-cipher.sh
+```
+
+Kurucu Deno 2.9.6 indirmesinin SHA-256 değerini doğrular; yt-cipher ve EJS kaynaklarını belirli commit’lere sabitler. Servis yalnızca `127.0.0.1:8001` üzerinde, ayrı kullanıcıyla çalışır. `/etc/pit-stop-cipher/cipher.env` içindeki `API_TOKEN` değerini müzik servisinin özel ortam dosyasında `YOUTUBE_CIPHER_PASSWORD` olarak, adresi `YOUTUBE_CIPHER_URL=http://127.0.0.1:8001` olarak tanımlayın. Bu değerleri GitHub’a yüklemeyin.
+
+Mevcut systemd müzik kurulumunu güncellerken `deploy/lavalink.yml` dosyasını `/opt/pit-stop-music/application.yml`, `deploy/music-oauth.mjs` dosyasını `/opt/pit-stop-music/music-oauth.mjs`, `deploy/pit-stop-music.service` dosyasını `/etc/systemd/system/pit-stop-music.service` konumuna kurun; `systemctl daemon-reload` ve `systemctl restart pit-stop-music` çalıştırın. OAuth yardımcısı için `/usr/local/bin/node` gerekir. Giriş anahtarı açılıştan sonra uygulanır; geçersiz bir YouTube oturumu tüm müzik servisini kapatmaz. Bot, müzik servisine 30 saniye aralıklarla yeniden bağlanır.
+
 ## Komutlar
 
 | Komut | İşlev |

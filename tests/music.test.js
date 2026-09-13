@@ -2,7 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { ChannelType, PermissionsBitField, PermissionFlagsBits } from 'discord.js';
-import { assertVoiceAccess, createMusic, MAX_PLAYLIST, MAX_QUEUE, MusicError, normalizeMusicQuery, selectQueueTracks } from '../src/music.js';
+import { assertVoiceAccess, createMusic, MAX_PLAYLIST, MAX_QUEUE, MusicError, normalizeMusicQuery, selectQueueTracks, playbackFailure } from '../src/music.js';
+
+test('playback errors give actionable categories without leaking provider responses', () => {
+  for (const [message, code] of [['Please sign in', 'LOGIN_REQUIRED'], ['Must find sig function', 'PLAYER_COMPATIBILITY'], ['429 Too many requests', 'RATE_LIMIT'], ['Not success status code: 403', 'SOURCE_UNAVAILABLE'], ['Connection timed out', 'SOURCE_CONNECTION'], ['unrecognized response', 'PLAYBACK_FAILED']]) {
+    const result = playbackFailure({ exception: { message, cause: 'https://example.test/?token=PRIVATE' } });
+    assert.equal(result.code, code);
+    assert.ok(!JSON.stringify(result).includes('PRIVATE'));
+  }
+  assert.equal(playbackFailure(null).code, 'PLAYBACK_FAILED');
+});
 
 const fullPermissions = new PermissionsBitField([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]);
 function track(index = 0) {
