@@ -491,7 +491,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         const records = store.listRecords(sessionStoreGuildId, 'panel_session', 5000)
           .filter(item => item.expires > Date.now() && (item.guildId === guildId || item.seenGuilds?.includes(guildId)));
         if (request.method === 'GET') {
-          json(response, 200, { activeCount: records.length, sessions: records.map(item => ({ id: item.id, user: item.user, authType: item.authType || 'oauth', createdAt: item.createdAt, expires: item.expires })) }); return;
+          json(response, 200, { activeCount: records.length, sessions: records.map(item => ({ user: item.user, authType: item.authType || 'oauth', createdAt: item.createdAt, expires: item.expires })) }); return;
         }
         if (request.method === 'DELETE') {
           for (const item of records) deleteSession(item.id);
