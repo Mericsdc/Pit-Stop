@@ -72,7 +72,7 @@ async function setup(t, configOverrides = {}) {
   };
   const crew = {
     getStatus: guildId => ({ enabled: true, crewId: 1636, guildId, members: [{ name: 'Pilot', crewRep: 100 }] }),
-    refresh: async guildId => { calls.crew.push(guildId); return { enabled: true, crewId: 1636, members: [{ name: 'Pilot', crewRep: 125 }] }; },
+    refresh: async (...args) => { calls.crew.push(args); return { enabled: true, crewId: 1636, members: [{ name: 'Pilot', crewRep: 125 }] }; },
   };
   const config = {
     publicUrl: PUBLIC_ORIGIN,
@@ -241,7 +241,7 @@ test('crew dashboard reads current comparisons and triggers a protected refresh'
   const refreshed = await fixture.request(`/api/guilds/${GUILD}/crew`, { method: 'POST', headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(refreshed.status, 200);
   assert.equal((await refreshed.json()).members[0].crewRep, 125);
-  assert.deepEqual(fixture.calls.crew, [GUILD]);
+  assert.deepEqual(fixture.calls.crew, [[GUILD, true, { log: true, actorId: USER, actorName: 'Pilot' }]]);
 });
 
 test('panel ticket close uses the same audited close path as Discord', async t => {

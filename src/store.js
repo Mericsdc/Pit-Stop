@@ -234,6 +234,7 @@ export function createStore(path) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new TypeError('Günlük sınırı 1–100 arasında olmalı.');
       const parameters = [guildId];
       let query = "SELECT * FROM audit_logs WHERE guild_id = ? AND type != 'message.update'";
+      if (options.type == null || options.type === '') query += " AND NOT (type = 'crew.refreshed' AND actor_id IS NULL)";
       if (options.before != null) {
         const before = typeof options.before === 'string' && /^\d+$/u.test(options.before) ? Number(options.before) : options.before;
         if (!Number.isSafeInteger(before) || before < 1) throw new TypeError('Günlük sayfalama kimliği geçersiz.');

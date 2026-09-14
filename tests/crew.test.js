@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCrewTracker, INITIAL_CREW_MEMBERS, normalizeProfile, normalizeRoster } from '../src/crew.js';
+import { CREW_REFRESH_INTERVAL, createCrewTracker, INITIAL_CREW_MEMBERS, normalizeProfile, normalizeRoster } from '../src/crew.js';
 import { createStore } from '../src/store.js';
 
 const GUILD = '1400000000000000000';
@@ -34,6 +34,12 @@ test('crew tracker stores daily REP, event and score comparisons from live Membe
   assert.equal(current.dailyDriverScore, 20);
   assert.equal(current.members.find(member => member.name === 'Pilot').dailyCrewRep, 200);
   assert.equal(store.getRecord(GUILD, 'crew_daily', '2026-09-13').dailyCrewRep, 350);
+  assert.equal(current.refreshIntervalMs, CREW_REFRESH_INTERVAL);
+  assert.equal(store.getLogs(GUILD).length, 0);
+  await tracker.refresh(GUILD, true, { log: true, actorId: '1400000000000000001', actorName: 'Pilot' });
+  assert.equal(store.getLogs(GUILD).length, 1);
+  assert.equal(store.getLogs(GUILD)[0].actorId, '1400000000000000001');
+  assert.match(store.getLogs(GUILD)[0].message, /elle yeniledi/u);
   tracker.close();
 });
 

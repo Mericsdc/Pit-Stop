@@ -106,6 +106,14 @@ test('logs isolate guilds, filter types and paginate by id without duplicates', 
   assert.equal(typeof first.createdAt, 'number');
 });
 
+test('automatic crew refresh noise stays hidden while manual crew logs remain visible', (t) => {
+  const store = memory(t);
+  store.addLog(GUILD, { type: 'crew.refreshed', actorId: null, message: 'Otomatik yenileme' });
+  store.addLog(GUILD, { type: 'crew.refreshed', actorId: USER, message: 'Elle yenileme', details: { actorName: 'Pilot' } });
+  assert.deepEqual(store.getLogs(GUILD).map(log => log.message), ['Elle yenileme']);
+  assert.equal(store.getLogs(GUILD, { type: 'crew.refreshed' }).length, 2);
+});
+
 test('logs reject invalid metadata and query controls', (t) => {
   const store = memory(t);
   for (const entry of [

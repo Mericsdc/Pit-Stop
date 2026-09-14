@@ -1,6 +1,7 @@
 const API_URL = 'https://api.nightriderz.world/gateway.php?contentType=application/json';
 export const NRZ_CREW_ID = 1636;
 export const NRZ_CREW_URL = `https://nightriderz.world/crew/headquarters/${NRZ_CREW_ID}`;
+export const CREW_REFRESH_INTERVAL = 3 * 60 * 60_000;
 
 // Initial roster read from the crew's Members section. When a read-only
 // NightRiderz session is configured, GetMembersRep replaces this seed.
@@ -64,6 +65,12 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
   let timer;
   let running;
 
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(() => void refresh(homeGuildId, true).catch(() => {}), CREW_REFRESH_INTERVAL);
+    timer.unref?.();
+  }
+
   async function request(method, parameters, authenticated = false) {
     const headers = { 'Content-Type': 'application/json', Accept: 'application/json', Origin: 'https://nightriderz.world', Referer: 'https://nightriderz.world/' };
     if (authenticated) {
@@ -81,11 +88,15 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
     return store.getRecord(guildId, 'crew_current', 'current') || { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, members: [], updatedAt: null, refreshing: Boolean(running), exactRoster: Boolean(auth.userKey && auth.personaKey) };
   }
 
-  async function refresh(guildId = homeGuildId, force = false) {
+  async function refresh(guildId = homeGuildId, force = false, audit = {}) {
     if (!guildId || guildId !== homeGuildId) throw new Error('Crew takibi bu sunucu için yapılandırılmadı.');
     const current = store.getRecord(guildId, 'crew_current', 'current');
-    if (!force && current?.updatedAt && now() - current.updatedAt < 2 * 60_000) return current;
-    if (running) return running;
+    if (!force && current?.updatedAt && now() - current.updatedAt < CREW_REFRESH_INTERVAL) return current;
+    if (running) {
+      const result = await running;
+      if (force) schedule();
+      return result;
+    }
     running = (async () => {
       let roster = store.getRecord(guildId, 'crew_roster', 'current')?.members || INITIAL_CREW_MEMBERS;
       let exactRoster = false;
@@ -124,10 +135,10 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       }).sort((a, b) => b.dailyCrewRep - a.dailyCrewRep || b.crewRep - a.crewRep);
       const totals = members.reduce((sum, item) => ({ crewRep: sum.crewRep + item.crewRep, instantCrewRep: sum.instantCrewRep + item.crewRepChange, dailyCrewRep: sum.dailyCrewRep + item.dailyCrewRep, dailyEvents: sum.dailyEvents + item.dailyEvents, dailyDriverScore: sum.dailyDriverScore + item.dailyDriverScore }), { crewRep: 0, instantCrewRep: 0, dailyCrewRep: 0, dailyEvents: 0, dailyDriverScore: 0 });
       const latest = profiles.map(item => ({ name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: item.profileAvailable }));
-      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, date, referenceDate, comparisonAvailable: Boolean(reference.length), exactRoster, profileFailures, rosterError, members, ...totals };
+      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, nextRefreshAt: timestamp + CREW_REFRESH_INTERVAL, refreshIntervalMs: CREW_REFRESH_INTERVAL, date, referenceDate, comparisonAvailable: Boolean(reference.length), exactRoster, profileFailures, rosterError, members, ...totals };
       store.putRecord(guildId, 'crew_current', 'current', status);
       store.putRecord(guildId, 'crew_daily', date, { reference, referenceDate, latest, updatedAt: timestamp, dailyCrewRep: totals.dailyCrewRep, dailyEvents: totals.dailyEvents, dailyDriverScore: totals.dailyDriverScore });
-      store.addLog(guildId, { type: 'crew.refreshed', actorId: null, message: `${members.length} ekip üyesinin REP ve profil istatistikleri güncellendi.`, details: { crewId: NRZ_CREW_ID, exactRoster, profileFailures, instantCrewRep: totals.instantCrewRep, dailyCrewRep: totals.dailyCrewRep } });
+      if (audit.log) store.addLog(guildId, { type: 'crew.refreshed', actorId: audit.actorId || null, message: `${audit.actorName || 'Bir yetkili'} ekip verilerini elle yeniledi.`, details: { actorName: audit.actorName || null, crewId: NRZ_CREW_ID, exactRoster, profileFailures, instantCrewRep: totals.instantCrewRep, dailyCrewRep: totals.dailyCrewRep } });
       return status;
     })().catch(error => {
       logger('error', 'crew_refresh_failed', { code: error.code || 'UNKNOWN' });
@@ -135,14 +146,14 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       if (fallback.members?.length) store.putRecord(guildId, 'crew_current', 'current', fallback);
       return fallback;
     }).finally(() => { running = null; });
-    return running;
+    const result = await running;
+    if (force) schedule();
+    return result;
   }
 
   async function initialize() {
     if (!homeGuildId) return;
     await refresh(homeGuildId, true);
-    timer = setInterval(() => void refresh(homeGuildId).catch(() => {}), 2 * 60_000);
-    timer.unref();
   }
-  return { initialize, refresh, getStatus, close() { clearInterval(timer); } };
+  return { initialize, refresh, getStatus, close() { clearTimeout(timer); } };
 }

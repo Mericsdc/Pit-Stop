@@ -317,7 +317,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       if (resource === 'crew' && request.method === 'GET') { json(response, 200, crew?.getStatus(guildId) || { enabled: false, members: [], error: 'Crew takibi kullanılamıyor.' }); return; }
       if (resource === 'crew' && request.method === 'POST') {
         if (!crew) throw httpError(503, 'Crew takibi kullanılamıyor.');
-        json(response, 200, await crew.refresh(guildId, true)); return;
+        json(response, 200, await crew.refresh(guildId, true, { log: true, actorId: session.user.id, actorName: session.user.name })); return;
       }
       if (resource === 'boosted-event' && ['GET', 'POST'].includes(request.method)) {
         if (!boostedEvents) throw httpError(503, 'Boosted Event izleyicisi kullanılamıyor.');
