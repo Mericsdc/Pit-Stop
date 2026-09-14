@@ -45,9 +45,9 @@ document.documentElement.dataset.theme = initialTheme;
 function updateThemeButtons() { $$('[data-theme-choice]').forEach(button => button.classList.toggle('active', button.dataset.themeChoice === document.documentElement.dataset.theme)); }
 function applyAppearance(settings = state.guild?.settings) {
   const hasServerLogo = settings && Object.hasOwn(settings, 'panelLogoUrl');
-  const logo = hasServerLogo ? (settings.panelLogoUrl || '/assets/logo.webp') : (localStorage.getItem('pitstop-logo-url') || '/assets/logo.webp');
+  const logo = hasServerLogo ? (settings.panelLogoUrl || '/assets/login-brand.png') : (localStorage.getItem('pitstop-logo-url') || '/assets/login-brand.png');
   if (hasServerLogo) { if (settings.panelLogoUrl) localStorage.setItem('pitstop-logo-url', settings.panelLogoUrl); else localStorage.removeItem('pitstop-logo-url'); }
-  for (const image of [$('#panel-logo'), $('#login-logo')].filter(Boolean)) { image.onerror = () => { image.onerror = null; image.src = '/assets/logo.webp'; }; image.src = logo; }
+  for (const image of [$('#panel-logo'), $('#login-logo')].filter(Boolean)) { image.onerror = () => { image.onerror = null; image.src = '/assets/login-brand.png'; }; image.src = logo; }
   const banner = settings?.panelBannerUrl || '/assets/banner.webp';
   if ($('#hero-banner')) { $('#hero-banner').onerror = () => { $('#hero-banner').onerror = null; $('#hero-banner').src = '/assets/banner.webp'; }; $('#hero-banner').src = banner; }
   const background = settings?.panelLoginBackgroundUrl || '';
