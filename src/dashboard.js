@@ -119,11 +119,16 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       map.delete(key);
       if (map === sessions && sessionStoreGuildId) store.deleteRecord(sessionStoreGuildId, 'panel_session', key);
     }
-    if (sessionStoreGuildId) for (const item of store.listRecords(sessionStoreGuildId, 'panel_session', 5000)) if (item.expires <= now) store.deleteRecord(sessionStoreGuildId, 'panel_session', item.id);
+    if (sessionStoreGuildId) for (const item of store.listRecords(sessionStoreGuildId, 'panel_session', 5000)) {
+      if (!item.createdAt || item.expires <= now || item.expires > item.createdAt + 8 * 3600_000) {
+        sessions.delete(item.id); store.deleteRecord(sessionStoreGuildId, 'panel_session', item.id);
+      }
+    }
     for (const [key, value] of weatherCache) if (value.expires <= now) weatherCache.delete(key);
   };
   const cleanup = setInterval(clean, 60_000);
   cleanup.unref();
+  clean();
 
   async function discordApi(path, accessToken) {
     const response = await fetcher(`https://discord.com/api/v10${path}`, {
