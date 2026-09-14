@@ -12,8 +12,10 @@ test('Boosted Event data and leaderboard class are normalized defensively', () =
   assert.equal(nextBoostedRefreshDelay(Date.parse('2026-09-13T10:29:50Z')), 100_000);
   assert.equal(nextBoostedRefreshDelay(Date.parse('2026-09-13T10:30:20Z')), 70_000);
   assert.equal(nextBoostedRefreshDelay(Date.parse('2026-09-13T10:32:00Z')), 29.5 * 60_000);
-  assert.equal(classEmoji('Class D'), '🟢');
-  assert.equal(classEmoji('Sınıf belirtilmedi'), '🏁');
+  const guild = { emojis: { cache: new Map([['emoji', { id: '123', name: 'Dclass', animated: false }]]) } };
+  assert.equal(classEmoji('Class D', guild), '<:Dclass:123>');
+  assert.equal(classEmoji('Class D'), '');
+  assert.equal(classEmoji('Sınıf belirtilmedi', guild), '');
   assert.deepEqual(normalizeBoostedEvent([{ id: '377', name: 'OUTLAWS (TEAM ESCAPE)', eventModeId: '24', isBoosted: '1' }]), { id: '377', name: 'OUTLAWS', type: 'Team Escape', eventModeId: '24' });
   assert.deepEqual(parseLeaderboardDescription('<meta name="description" content="Class D · Team Escape">'), { className: 'Class D', description: 'Class D · Team Escape' });
   assert.equal(normalizeBoostedEvent([{ id: '1', name: 'Race', isBoosted: '0' }]), null);
@@ -22,7 +24,7 @@ test('Boosted Event data and leaderboard class are normalized defensively', () =
 test('monitor announces a new event once and persists its latest status', async t => {
   const store = createStore(':memory:'); t.after(() => store.close());
   const sent = [];
-  const client = { guilds: { cache: new Map([[GUILD, { channels: { fetch: async id => id === CHANNEL ? { isTextBased: () => true, send: async payload => { sent.push(payload); } } : null } }]]) } };
+  const client = { guilds: { cache: new Map([[GUILD, { emojis: { cache: new Map([['d', { id: '444', name: 'Dclass', animated: false }], ['a', { id: '111', name: 'Aclass', animated: false }]]) }, channels: { fetch: async id => id === CHANNEL ? { isTextBased: () => true, send: async payload => { sent.push(payload); } } : null } }]]) } };
   let raceId = '377';
   const fetcher = async (url) => String(url).includes('gateway.php')
     ? Response.json([{ id: raceId, name: raceId === '377' ? 'OUTLAWS (TEAM ESCAPE)' : 'ROSEWOOD', eventModeId: '24', isBoosted: '1' }])
@@ -34,7 +36,7 @@ test('monitor announces a new event once and persists its latest status', async 
   assert.equal(sent.length, 1);
   assert.match(sent[0].content, /OUTLAWS/);
   assert.match(sent[0].content, /Class D/);
-  assert.match(sent[0].content, /🟢 Class D/);
+  assert.match(sent[0].content, /<:Dclass:444> Class D/);
   assert.match(sent[0].content, /https:\/\/nightriderz\.world\/leaderboard\/377/);
   assert.match(sent[0].content, /\*\*Tür:\*\* Team Escape\n\*\*Bitiş:\*\* <t:1800:t> \(<t:1800:R>\)/);
   assert.equal(store.getRecord(GUILD, 'boosted_event', 'current').event.endsAt, 1_800_000);

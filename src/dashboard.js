@@ -196,7 +196,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.discordapp.com https://i.ytimg.com https://img.youtube.com https://i.scdn.co; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     if (secure) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(request.url, base);
@@ -208,7 +208,8 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         return;
       }
       if (url.pathname === '/api/status' && request.method === 'GET') {
-        json(response, 200, { name: 'Pit-Stop', ready: client.isReady(), loginConfigured: configured, version: packageInfo.version, build: buildInfo || basename(process.cwd()), codeLogin: true });
+        const publicSettings = sessionStoreGuildId ? store.getSettings(sessionStoreGuildId) : {};
+        json(response, 200, { name: 'Pit-Stop', ready: client.isReady(), loginConfigured: configured, version: packageInfo.version, build: buildInfo || basename(process.cwd()), codeLogin: true, appearance: { panelLogoUrl: publicSettings.panelLogoUrl, panelBannerUrl: publicSettings.panelBannerUrl } });
         return;
       }
       const session = getSession(request);
@@ -402,11 +403,13 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       if (resource === 'faqs') {
         if (request.method === 'GET') { json(response, 200, store.listRecords(guildId, 'faq', 500)); return; }
         const body = await readJson(request);
-        if (request.method === 'POST') {
+        if (['POST', 'PUT'].includes(request.method)) {
           if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 300) throw httpError(400, 'Soru 1–300 karakter arasında olmalı.');
           if (typeof body.answer !== 'string' || !body.answer.trim() || body.answer.length > 1800) throw httpError(400, 'Cevap 1–1800 karakter arasında olmalı.');
           const normalized = value => value.normalize('NFKC').trim().toLocaleLowerCase('tr-TR').replace(/\s+/gu, ' ');
-          if (store.listRecords(guildId, 'faq', 500).some(item => normalized(item.question || '') === normalized(body.question))) throw httpError(409, 'Aynı soru daha önce eklenmiş. Mevcut kaydı düzenleyin veya farklı bir soru yazın.');
+          if (store.listRecords(guildId, 'faq', 500).some(item => item.id !== body.id && normalized(item.question || '') === normalized(body.question))) throw httpError(409, 'Aynı soru daha önce eklenmiş. Mevcut kaydı düzenleyin veya farklı bir soru yazın.');
+        }
+        if (request.method === 'POST') {
           if (body.draft === true) {
             const id = random();
             store.putRecord(guildId, 'faq', id, { question: body.question.trim(), answer: body.answer.trim(), status: 'draft', createdAt: Date.now(), createdBy: session.user.id, createdByName: session.user.name });
@@ -416,6 +419,21 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           try { json(response, 200, await features.publishFaq(guild, member, session.user, body.question, body.answer)); }
           catch (error) { throw httpError(400, error.message); }
           return;
+        }
+        if (request.method === 'PUT') {
+          if (typeof body.id !== 'string' || !body.id) throw httpError(400, 'SSS kaydı kimliği gerekli.');
+          const item = store.getRecord(guildId, 'faq', body.id);
+          if (!item) throw httpError(404, 'SSS kaydı bulunamadı.');
+          const question = body.question.trim(), answer = body.answer.trim();
+          if (item.status === 'published' && item.channelId && item.messageId) {
+            const channel = await guild.channels.fetch(item.channelId).catch(() => null);
+            const message = await channel?.messages?.fetch(item.messageId).catch(() => null);
+            if (!message) throw httpError(409, 'Yayımlanmış Discord mesajı bulunamadı. Kaydı kaldırıp yeniden yayımlayın.');
+            await message.edit({ content: `❓ **${question}**\n${answer}`, allowedMentions: { parse: [] } }).catch(() => { throw httpError(409, 'Discord mesajı güncellenemedi; bot izinlerini kontrol edin.'); });
+          }
+          store.putRecord(guildId, 'faq', body.id, { ...item, question, answer, updatedAt: Date.now(), updatedBy: session.user.id, updatedByName: session.user.name });
+          store.addLog(guildId, { type: 'faq.updated', actorId: session.user.id, message: `${session.user.name} bir SSS kaydını düzenledi.`, details: { actorName: session.user.name, id: body.id, before: { question: item.question, answer: item.answer }, after: { question, answer }, messageId: item.messageId || null } });
+          json(response, 200, store.getRecord(guildId, 'faq', body.id)); return;
         }
         if (request.method === 'DELETE') {
           if (typeof body.id !== 'string' || !body.id) throw httpError(400, 'SSS kaydı kimliği gerekli.');

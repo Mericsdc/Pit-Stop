@@ -63,6 +63,8 @@ for (const [label, patch] of [
   ['blank responder', { responses: [{ trigger: 'ok', reply: '' }] }],
   ['oversized responder', { responses: [{ trigger: 'ok', reply: 'a'.repeat(1901) }] }],
   ['multiword responder', { responses: [{ trigger: 'two words', reply: 'yes' }] }],
+  ['insecure logo URL', { panelLogoUrl: 'http://example.com/logo.png' }],
+  ['credentialed banner URL', { panelBannerUrl: 'https://user:pass@example.com/banner.png' }],
 ]) {
   test(`invalid settings reject ${label} without saving partial changes`, (t) => {
     const store = memory(t);
@@ -71,6 +73,16 @@ for (const [label, patch] of [
     assert.deepEqual(store.getSettings(GUILD), previous);
   });
 }
+
+test('panel appearance accepts HTTPS image URLs and can reset them', (t) => {
+  const store = memory(t);
+  const saved = store.updateSettings(GUILD, { panelLogoUrl: 'https://cdn.example/logo.png', panelBannerUrl: 'https://cdn.example/banner.webp' });
+  assert.equal(saved.panelLogoUrl, 'https://cdn.example/logo.png');
+  assert.equal(saved.panelBannerUrl, 'https://cdn.example/banner.webp');
+  const reset = store.updateSettings(GUILD, { panelLogoUrl: null, panelBannerUrl: null });
+  assert.equal(reset.panelLogoUrl, null);
+  assert.equal(reset.panelBannerUrl, null);
+});
 
 test('dependent settings must have a channel or role and failed transactions recover', (t) => {
   const store = memory(t);

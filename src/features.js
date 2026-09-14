@@ -206,7 +206,9 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
       const expiresAt = now() + Math.min(5, Math.max(1, Number(s.panelCodeMinutes) || 2)) * 60_000;
       store.putRecord(i.guildId, 'panel_login_code', hash, { userId: i.user.id, userName: userLabel(i.user), expiresAt, createdAt: now() });
       record(i.guildId, 'panel.code_created', 'Tek kullanımlık panel giriş kodu üretildi.', i.user.id, { actorName: userLabel(i.user), expiresAt });
-      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\`${token}\`\n\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer ve yalnızca bir kez kullanılabilir. Bu kodu kimseyle paylaşmayın.` });
+      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\`${token}\`\n\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer, mesaj otomatik silinir ve kod yalnızca bir kez kullanılabilir. Panel oturumu başarılı girişten sonra en fazla 8 saat açıktır. Bu kodu kimseyle paylaşmayın.` });
+      const deletion = setTimeout(() => void i.deleteReply().catch(() => {}), Math.max(0, expiresAt - now()));
+      deletion.unref?.();
     } },
     { data: command('hatırlat', 'Zamanı geldiğinde notunu DM veya kanalda hatırlat.').addStringOption(o => o.setName('not').setDescription('2 saat sonra NFS turnuvası var').setRequired(true).setMaxLength(1600)).addStringOption(o => o.setName('hedef').setDescription('Bildirim yeri').addChoices({ name: 'DM', value: 'dm' }, { name: 'Bu kanal', value: 'channel' })), async execute(i) {
       if (store.listRecords(i.guildId, 'reminder').filter(r => r.userId === i.user.id && r.status === 'pending').length >= 20) return i.reply({ ...ephemeral, content: 'En fazla 20 bekleyen hatırlatıcı oluşturabilirsiniz.' });
@@ -279,6 +281,7 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
         }
       }
       for (const kind of ['reminder', 'ticket', 'case']) for (const item of store.listRecords(null, kind, 10000)) if (['sent', 'failed', 'closed'].includes(item.status) && now() - (item.sentAt || item.closedAt || item.createdAt) > 30 * 86400000) store.deleteRecord(item.guildId, kind, item.id);
+      for (const item of store.listRecords(null, 'panel_login_code', 10000)) if (item.expiresAt <= now()) store.deleteRecord(item.guildId, 'panel_login_code', item.id);
     } finally { ticking = false; }
   }
   function install() {

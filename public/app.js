@@ -2,7 +2,7 @@ import { staticHosting, livePanelUrl } from './site-config.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, view: 'overview', logs: [], dirty: false, me: null, crewSortDirection: 'desc', navOrder: [], panelAccess: null };
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSortDirection: 'desc', navOrder: [], panelAccess: null, faqRecords: [], editingFaqId: null };
 let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', community: 'Üyeler ve roller', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
 const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music'], automation: ['community', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
@@ -43,6 +43,14 @@ state.navOrder = savedNavOrder();
 const initialTheme = localStorage.getItem('pitstop-theme') === 'light' ? 'light' : 'dark';
 document.documentElement.dataset.theme = initialTheme;
 function updateThemeButtons() { $$('[data-theme-choice]').forEach(button => button.classList.toggle('active', button.dataset.themeChoice === document.documentElement.dataset.theme)); }
+function applyAppearance(settings = state.guild?.settings) {
+  const hasServerLogo = settings && Object.hasOwn(settings, 'panelLogoUrl');
+  const logo = hasServerLogo ? (settings.panelLogoUrl || '/assets/logo.webp') : (localStorage.getItem('pitstop-logo-url') || '/assets/logo.webp');
+  if (hasServerLogo) { if (settings.panelLogoUrl) localStorage.setItem('pitstop-logo-url', settings.panelLogoUrl); else localStorage.removeItem('pitstop-logo-url'); }
+  for (const image of [$('#panel-logo'), $('#login-logo')].filter(Boolean)) { image.onerror = () => { image.onerror = null; image.src = '/assets/logo.webp'; }; image.src = logo; }
+  const banner = settings?.panelBannerUrl || '/assets/banner.webp';
+  if ($('#hero-banner')) { $('#hero-banner').onerror = () => { $('#hero-banner').onerror = null; $('#hero-banner').src = '/assets/banner.webp'; }; $('#hero-banner').src = banner; }
+}
 function setMenuOpen(open) { document.body.classList.toggle('menu-open', open); const toggleButton = $('#menu-toggle'); if (toggleButton) { toggleButton.setAttribute('aria-expanded', String(open)); toggleButton.setAttribute('aria-label', open ? 'Menüyü kapat' : 'Menüyü aç'); } if ($('#menu-backdrop')) $('#menu-backdrop').hidden = !open; }
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const check = value => value ? 'checked' : '';
@@ -51,9 +59,9 @@ const number = value => Number(value || 0).toLocaleString('tr-TR');
 const duration = ms => `${Math.floor((ms || 0) / 60000)}:${String(Math.floor((ms || 0) / 1000) % 60).padStart(2, '0')}`;
 const uptime = seconds => seconds >= 86400 ? `${Math.floor(seconds / 86400)} gün` : seconds >= 3600 ? `${Math.floor(seconds / 3600)} sa` : `${Math.floor(seconds / 60)} dk`;
 const date = value => value ? new Date(value).toLocaleString('tr-TR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) : '—';
-function greeting() {
-  const hour = new Date().getHours(), zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return `<section class="card greeting"><h3>${hour < 6 ? 'İyi geceler' : hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar'}, ${escape(state.me?.user.name)}. Hoş geldiniz!</h3><p class="muted tiny">${escape(zone)} saat dilimine göre · <time id="local-clock">${date(Date.now())}</time></p></section>`;
+function greetingText() {
+  const hour = new Date().getHours();
+  return `${hour < 6 ? 'İyi geceler' : hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar'}, ${state.me?.user.name || ''}. Hoş geldiniz!`;
 }
 function roleChecks(id, selected = [], assignable = false) { return `<div id="${id}" class="role-checks">${state.guild.roles.filter(r => !assignable || r.assignable || selected.includes(r.id)).map(r => `<label><input type="checkbox" value="${escape(r.id)}" ${check(selected.includes(r.id))}> ${escape(r.name)}${assignable && !r.assignable ? ' (botun rol hiyerarşisini kontrol edin)' : ''}</label>`).join('') || '<p class="muted">Botun atayabileceği rol yok. Discord’da Pit-Stop bot rolünü atanacak rollerin üstüne taşıyın.</p>'}</div>`; }
 const selectedRoles = id => $$(`#${id} input:checked`).map(input => input.value);
@@ -66,8 +74,11 @@ function notice(message, error = false) {
 }
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrf, ...options.headers } });
-  const body = await response.json();
-  if (!response.ok) { const error = new Error(body.error || 'İşlem tamamlanamadı.'); error.status = response.status; throw error; }
+  let body = {};
+  if ((response.headers.get('content-type') || '').includes('application/json')) {
+    try { body = await response.json(); } catch { body = {}; }
+  }
+  if (!response.ok) { const error = new Error(body.error || 'İşlem tamamlanamadı. Canlı panel bağlantısını kontrol edin.'); error.status = response.status; throw error; }
   return body;
 }
 const guildApi = (resource = '', options) => api(`/api/guilds/${state.guild.id}${resource ? `/${resource}` : ''}`, options);
@@ -116,11 +127,11 @@ function renderCommunity() {
   <section class="card form-stack">${toggle('leave-enabled', 'Ayrılma mesajları', 'Sunucudan ayrılan üyeler için mesaj gönder.', s.leaveEnabled)}<div class="field"><label for="leave-channel">Bildirim kanalı</label><select id="leave-channel">${channelOptions(s.leaveChannelId)}</select></div><div class="field"><label for="leave-message">Ayrılma mesajı</label><textarea id="leave-message" maxlength="1000" rows="4">${escape(s.leaveMessage)}</textarea><small>Değişkenler: {user}, {username}, {server}, {memberCount}</small></div><div class="hint"><strong>Önizleme</strong><p id="leave-preview"></p></div></section></div><div class="form-actions"><span class="muted tiny">Değişiklikler kaydettikten sonra uygulanır.</span><button class="button primary" type="submit">Değişiklikleri kaydet</button></div></form>`;
 }
 function responseRow(response = { trigger: '', reply: '' }) {
-  return `<div class="response-row"><div class="field trigger-field"><label>Komut (! olmadan)<input name="trigger" value="${escape(response.trigger)}" placeholder="kurallar" maxlength="32" required></label></div><div class="field reply-field"><label>Botun cevabı<textarea name="reply" placeholder="Sunucu kurallarını #kurallar kanalında bulabilirsin." maxlength="1800" required>${escape(response.reply)}</textarea></label></div><button type="button" class="button danger remove-response" aria-label="Bu otomatik cevabı kaldır">×</button></div>`;
+  return `<div class="response-row"><div class="field trigger-field"><label>Komut adı<input name="trigger" value="${escape(response.trigger)}" placeholder="kurallar" maxlength="32" required></label><small>Başına ! eklemeyin; bot otomatik olarak !komut biçiminde dinler.</small></div><div class="field reply-field"><label>Botun cevabı<textarea name="reply" placeholder="Sunucu kurallarını #kurallar kanalında bulabilirsin." maxlength="1800" required>${escape(response.reply)}</textarea></label></div><button type="button" class="button danger remove-response" aria-label="Bu otomatik cevabı kaldır">×</button></div>`;
 }
 function renderResponders() {
   const s = state.guild.settings;
-  return `<form id="responders-form"><section class="card">${toggle('responder-enabled', 'Otomatik cevaplar', 'Üyeler !komut yazdığında tanımladığın mesajla cevap ver.', s.responderEnabled)}<div class="response-toolbar"><h3>Özel cevapların</h3><input id="response-search" type="search" placeholder="Cevaplarda ara" aria-label="Otomatik cevaplarda ara"><button type="button" id="add-response" class="button subtle">+ Cevap ekle</button></div><div class="responses" id="responses">${s.responses.map(responseRow).join('')}</div><p class="muted tiny" id="responses-empty" ${s.responses.length ? 'hidden' : ''}>Henüz özel bir cevap yok. İlk komutunu ekleyerek başla.</p><div class="hint"><span class="inline-code">!kurallar</span> gibi komutlar tam eşleşmeyle çalışır. Büyük/küçük harf fark etmez. Diğer bot komutlarını <span class="inline-code">/</span> ile kullanabilirsin.</div></section><div class="form-actions"><button class="button primary" type="submit">Cevapları kaydet</button></div></form>`;
+  return `<form id="responders-form"><section class="card">${toggle('responder-enabled', 'Otomatik cevaplar', 'Üyeler ünlem işaretiyle başlayan tanımlı komutu yazdığında belirlediğiniz metinle cevap verir.', s.responderEnabled)}<div class="response-toolbar"><h3>Özel cevapların</h3><input id="response-search" type="search" placeholder="Cevaplarda ara" aria-label="Otomatik cevaplarda ara"><button type="button" id="add-response" class="button subtle">+ Cevap ekle</button></div><div class="responses" id="responses">${s.responses.map(responseRow).join('')}</div><p class="muted tiny" id="responses-empty" ${s.responses.length ? 'hidden' : ''}>Henüz özel bir cevap yok. İlk komutunu ekleyerek başla.</p><div class="hint">Komut alanına <span class="inline-code">kurallar</span> yazarsanız üyeler <span class="inline-code">!kurallar</span> yazarak cevabı alır. Büyük/küçük harf fark etmez. Diğer bot komutlarını <span class="inline-code">/</span> ile kullanabilirsiniz.</div></section><div class="form-actions"><button class="button primary" type="submit">Cevapları kaydet</button></div></form>`;
 }
 function musicCover(track) {
   return track?.artworkUrl
@@ -140,7 +151,7 @@ function logTable(logs) {
 function renderLogs() { return `<section class="card"><div class="log-tools"><label for="log-search" class="sr-only">Kayıtlarda ara</label><input id="log-search" type="search" placeholder="Kullanıcı veya olay ara"><label for="log-type" class="sr-only">Olay türü</label><select id="log-type"><option value="">Tüm olaylar</option>${Object.entries(logTypeNames).map(([value, label]) => `<option value="${escape(value)}">${label}</option>`).join('')}</select><button class="button subtle" id="reload-logs">↻ Kayıtları yenile</button><span class="muted tiny">Son 30 gün · En fazla 10.000 kayıt</span></div><div id="log-table" class="muted">Kayıtlar yükleniyor…</div><div class="form-actions"><button id="more-logs" class="button subtle" hidden>Daha eski kayıtlar</button></div></section>`; }
 function renderBoosted() {
   const s = state.guild.settings, event = state.guild.boostedEvent || {};
-  return `<form id="boosted-form" class="card form-stack"><div class="card-header"><div><h3>Boosted Event takibi</h3><p class="muted tiny">NightRiderz canlı haritası saat ve yarım saat güncellemelerinden sonra kontrol edilir.</p></div>${badge(s.boostedEventEnabled)}</div>${toggle('boosted-event-enabled', 'Etkinlik duyuruları', 'Yeni yarış bulunduğunda seçilen kanala bağlantı, sınıf ve bitiş saatiyle gönder.', s.boostedEventEnabled)}<label>Bildirim kanalı<select id="boosted-event-channel">${channelOptions(s.boostedEventChannelId || event.channelId)}</select></label><p class="muted tiny">Son kontrol: ${date(event.checkedAt)}${event.event ? ` · <a href="${escape(event.event.url || `https://nightriderz.world/leaderboard/${event.event.id}`)}" target="_blank" rel="noopener noreferrer">${escape(event.event.name)}</a> · ${escape(event.event.classEmoji || '🏁')} ${escape(event.event.className)}${event.event.endsAt ? ` · Bitiş: ${date(event.event.endsAt)}` : ''}` : ''}</p>${event.error ? `<p class="hint">${escape(event.error)}</p>` : ''}<div class="form-actions"><button type="button" class="button subtle" id="refresh-boosted-event">Şimdi kontrol et ve bildir</button><button class="button primary">Ayarları kaydet</button></div></form>`;
+  return `<form id="boosted-form" class="card form-stack"><div class="card-header"><div><h3>Boosted Event takibi</h3><p class="muted tiny">NightRiderz canlı haritası saat ve yarım saat güncellemelerinden sonra kontrol edilir.</p></div>${badge(s.boostedEventEnabled)}</div>${toggle('boosted-event-enabled', 'Etkinlik duyuruları', 'Yeni yarış bulunduğunda seçilen kanala bağlantı, sınıf ve bitiş saatiyle gönder.', s.boostedEventEnabled)}<label>Bildirim kanalı<select id="boosted-event-channel">${channelOptions(s.boostedEventChannelId || event.channelId)}</select></label><p class="muted tiny">Son kontrol: ${date(event.checkedAt)}${event.event ? ` · <a href="${escape(event.event.url || `https://nightriderz.world/leaderboard/${event.event.id}`)}" target="_blank" rel="noopener noreferrer">${escape(event.event.name)}</a> · ${escape(event.event.className)}${event.event.endsAt ? ` · Bitiş: ${date(event.event.endsAt)}` : ''}` : ''}</p>${event.error ? `<p class="hint">${escape(event.error)}</p>` : ''}<div class="form-actions"><button type="button" class="button subtle" id="refresh-boosted-event">Şimdi kontrol et ve bildir</button><button class="button primary">Ayarları kaydet</button></div></form>`;
 }
 
 function settingsLinks() {
@@ -152,14 +163,26 @@ function renderSettingsBase() {
   const s = state.guild.settings, perms = state.guild.bot.permissions;
   const commands = [['/panel-giris', 'Tek kullanımlık güvenli panel giriş kodu üret.'], ['/hatırlat · /hatırlatıcılar', 'Kişisel hatırlatma oluştur, listele veya iptal et.'], ['/healthcare', 'Mola hatırlatmalarına katıl veya kapat.'], ['/bilet-kapat', 'Destek biletini kapat.'], ['/uyar · /savunma-yanıt', 'Üyeyi uyar veya özel savunmaya yanıt ver.'], ['/yardim', 'Tüm komutları ve kullanımını göster.'], ['/clear · /temizle', 'Adet verilmezse tüm kanalı, verilirse son 1–100 mesajı temizle.'], ['/play · /pause · /skip · /stop', 'Müzik istasyonunu yönet.']];
   const active = [['Otomatik rol',s.autoRoleEnabled],['Ayrılma mesajı',s.leaveEnabled],['Otomatik cevap',s.responderEnabled],['Müzik',s.musicEnabled],['Spam',s.antiSpamEnabled],['Oltalama',s.antiPhishingEnabled],['Bilet',s.ticketEnabled],['Savunma',s.defenseEnabled],['Sağlık',s.healthEnabled],['Boosted Event',s.boostedEventEnabled],['SSS',s.faqEnabled]];
-  return `<div class="grid-2"><form id="settings-form" class="card"><h3>Discord kayıt kanalı</h3><p class="muted tiny">Panel kayıtlarına ek olarak Discord’a olay özeti gönderir.</p><div class="field"><label for="log-channel">Kayıt kanalı</label><select id="log-channel">${channelOptions(s.logChannelId)}</select></div><div class="form-actions"><button class="button primary">Kaydet</button></div></form><section class="card"><h3>Bot izinlerinin durumu</h3>${[['manageRoles','Rolleri Yönet'],['manageMessages','Mesajları Yönet'],['connect','Bağlan'],['speak','Konuş'],['moderateMembers','Zaman Aşımı'],['viewAuditLog','Denetim Kaydı'],['manageChannels','Kanalları Yönet'],['createPrivateThreads','Özel İleti Dizisi'],['manageThreads','İleti Dizilerini Yönet']].map(([key,label]) => `<div class="permission"><span>${label}</span>${badge(perms[key], 'Var', 'Eksik')}</div>`).join('')}</section><section class="card"><h3>Genel modül durumları</h3><div class="module-status-grid">${active.map(([name,on]) => `<div><span>${name}</span>${badge(on)}</div>`).join('')}</div></section><section class="card"><h3>Sistem ve bağlantı bilgileri</h3><div class="permission"><span>Discord</span>${badge(state.guild.bot.ready,'Bağlı','Bağlantı yok')}</div><div class="permission"><span>Veritabanı</span>${badge(true,'Bağlı','Hata')}</div><div class="permission"><span>Müzik servisi</span>${badge(state.guild.music.available,'Hazır','Bekliyor')}</div><div class="permission"><span>Gecikme</span><strong>${number(state.guild.bot.ping)} ms</strong></div><div class="permission"><span>Çalışma süresi</span><strong>${uptime(state.guild.bot.uptime)}</strong></div></section>${state.me.installationOwner ? `<form id="install-form" class="card wide form-stack"><h3>İzin verilen kurulum sunucuları</h3><label>Sunucu kimlikleri<textarea id="allowed-guilds" rows="4" required></textarea></label><p class="muted tiny">Ana sunucu listede kalmalıdır. Bu listeyi yalnızca bot sahibi düzenleyebilir.</p><button class="button primary">Kurulum izinlerini kaydet</button></form>` : ''}${settingsLinks()}<section class="card wide"><div class="card-header"><div><h3>Sayfa sırası</h3><p class="muted tiny">Sayfaları kendi menü grubu içinde taşıyabilirsiniz.</p></div><button type="button" class="button subtle" id="reset-overview-height">Genel bakış boyutunu sıfırla</button></div>${pageOrderEditor()}</section><section class="card wide"><div class="card-header"><h3>Komut rehberi</h3><span class="badge">/ komutları</span></div><div class="command-list">${commands.map(([name,desc]) => `<div class="command-item"><code>${name}</code><p>${desc}</p></div>`).join('')}</div></section></div>`;
+  const guildOptions = state.guilds.map(guild => `<option value="${escape(guild.id)}" ${guild.id === state.guild.id ? 'selected' : ''}>${escape(guild.name)}</option>`).join('');
+  return `<div class="grid-2 settings-grid">
+    <section class="card form-stack"><div><h3>Yönetilen Discord sunucusu</h3><p class="muted tiny">Panelde ayarlarını değiştirmek istediğiniz sunucuyu seçin.</p></div><label for="guild-select">Sunucu<select id="guild-select">${guildOptions}</select></label></section>
+    <form id="settings-form" class="card form-stack"><div><h3>Discord kayıt kanalı</h3><p class="muted tiny">Panel kayıtlarına ek olarak Discord’a olay özeti gönderir.</p></div><label for="log-channel">Kayıt kanalı<select id="log-channel">${channelOptions(s.logChannelId)}</select></label><div class="form-actions"><button class="button primary">Kayıt kanalını kaydet</button></div></form>
+    <form id="appearance-form" class="card form-stack"><div><h3>Panel logosu ve banner</h3><p class="muted tiny">Güvenli bir HTTPS görsel adresi kullanın. Alanları boş bırakarak varsayılan görsellere dönebilirsiniz.</p></div><label for="panel-logo-url">Logo görseli adresi<input id="panel-logo-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelLogoUrl || '')}"></label><label for="panel-banner-url">Genel bakış banner adresi<input id="panel-banner-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelBannerUrl || '')}"></label><div class="form-actions"><button type="button" id="reset-appearance" class="button subtle">Varsayılana dön</button><button class="button primary">Görselleri kaydet</button></div></form>
+    <section class="card"><h3>Bot izinlerinin durumu</h3>${[['manageRoles','Rolleri Yönet'],['manageMessages','Mesajları Yönet'],['connect','Bağlan'],['speak','Konuş'],['moderateMembers','Zaman Aşımı'],['viewAuditLog','Denetim Kaydı'],['manageChannels','Kanalları Yönet'],['createPrivateThreads','Özel İleti Dizisi'],['manageThreads','İleti Dizilerini Yönet']].map(([key,label]) => `<div class="permission"><span>${label}</span>${badge(perms[key], 'Var', 'Eksik')}</div>`).join('')}</section>
+    <section class="card"><h3>Genel modül durumları</h3><div class="module-status-grid">${active.map(([name,on]) => `<div><span>${name}</span>${badge(on)}</div>`).join('')}</div></section>
+    <section class="card"><h3>Sistem ve bağlantı bilgileri</h3><div class="permission"><span>Discord</span>${badge(state.guild.bot.ready,'Bağlı','Bağlantı yok')}</div><div class="permission"><span>Veritabanı</span>${badge(true,'Bağlı','Hata')}</div><div class="permission"><span>Müzik servisi</span>${badge(state.guild.music.available,'Hazır','Bekliyor')}</div><div class="permission"><span>Gecikme</span><strong>${number(state.guild.bot.ping)} ms</strong></div><div class="permission"><span>Çalışma süresi</span><strong>${uptime(state.guild.bot.uptime)}</strong></div></section>
+    ${state.me.installationOwner ? `<form id="install-form" class="card wide form-stack"><h3>İzin verilen kurulum sunucuları</h3><label>Sunucu kimlikleri<textarea id="allowed-guilds" rows="4" required></textarea></label><p class="muted tiny">Ana sunucu listede kalmalıdır. Bu listeyi yalnızca bot sahibi düzenleyebilir.</p><div class="form-actions"><button class="button primary">Kurulum izinlerini kaydet</button></div></form>` : ''}
+    ${settingsLinks()}
+    <section class="card wide"><div class="card-header"><div><h3>Sayfa sırası</h3><p class="muted tiny">Sayfaları kendi menü grubu içinde taşıyabilirsiniz.</p></div><button type="button" class="button subtle" id="reset-overview-height">Genel bakış boyutunu sıfırla</button></div>${pageOrderEditor()}</section>
+    <section class="card wide"><div class="card-header"><h3>Komut rehberi</h3><span class="badge">/ komutları</span></div><div class="command-list">${commands.map(([name,desc]) => `<div class="command-item"><code>${name}</code><p>${desc}</p></div>`).join('')}</div></section>
+  </div>`;
 }
 
 function renderSettings() { return renderSettingsBase(); }
 
 function renderFaq() {
   const s = state.guild.settings;
-  return `<div class="grid-2"><form id="faq-settings-form" class="card form-stack">${toggle('faq-enabled', 'Sık sorulan sorular', 'Panelden hazırlanan içerikleri seçilen Discord kanalına yayımla.', s.faqEnabled)}<label>SSS yayın kanalı<select id="faq-channel">${channelOptions(s.faqChannelId)}</select></label><button class="button primary">Yayın ayarlarını kaydet</button></form><form id="faq-form" class="card form-stack"><div><h3>Yeni soru ve cevap</h3><p class="muted tiny">Önizlemeyi kontrol edin; taslak kaydedebilir veya Discord’a yayımlayabilirsiniz. Yinelenen sorular reddedilir.</p></div><label>Soru<input id="faq-question" required maxlength="300" placeholder="Turnuvalara nasıl katılabilirim?"></label><label>Cevap<textarea id="faq-answer" required maxlength="1800" rows="7"></textarea></label><div id="faq-preview" class="discord-preview"><strong>Pit-Stop · Sık sorulan sorular</strong><p>Soru ve cevap önizlemesi burada görünür.</p></div><div class="form-actions"><button class="button subtle" name="faq-action" value="draft">Taslak olarak kaydet</button><button class="button primary" name="faq-action" value="publish">Discord kanalına yayımla</button></div></form><section class="card wide"><div class="card-header"><h3>SSS kayıtları</h3><input id="records-search" type="search" placeholder="Soru veya cevap ara" aria-label="SSS kayıtlarında ara"></div><div id="faqs-records">Yükleniyor…</div></section></div>`;
+  return `<div class="grid-2 balanced-grid"><form id="faq-settings-form" class="card form-stack">${toggle('faq-enabled', 'Sık sorulan sorular', 'Panelden hazırlanan içerikleri seçilen Discord kanalına yayımla.', s.faqEnabled)}<label>SSS yayın kanalı<select id="faq-channel">${channelOptions(s.faqChannelId)}</select></label><div class="form-actions"><button class="button primary">Yayın ayarlarını kaydet</button></div></form><form id="faq-form" class="card form-stack"><div><h3 id="faq-form-title">Yeni soru ve cevap</h3><p class="muted tiny">Önizlemeyi kontrol edin; taslak kaydedebilir veya Discord’a yayımlayabilirsiniz. Yinelenen sorular reddedilir.</p></div><label>Soru<input id="faq-question" required maxlength="300" placeholder="Turnuvalara nasıl katılabilirim?"></label><label>Cevap<textarea id="faq-answer" required maxlength="1800" rows="7"></textarea></label><div id="faq-preview" class="discord-preview"><strong>Pit-Stop · Sık sorulan sorular</strong><p>Soru ve cevap önizlemesi burada görünür.</p></div><div class="form-actions"><button type="button" id="cancel-faq-edit" class="button subtle" hidden>Düzenlemeyi iptal et</button><button class="button subtle" name="faq-action" value="draft">Taslak olarak kaydet</button><button class="button primary" name="faq-action" value="publish">Discord kanalına yayımla</button></div></form><section class="card wide"><div class="card-header"><h3>SSS kayıtları</h3><input id="records-search" type="search" placeholder="Soru veya cevap ara" aria-label="SSS kayıtlarında ara"></div><div id="faqs-records">Yükleniyor…</div></section></div>`;
 }
 
 const signed = value => `${Number(value || 0) > 0 ? '+' : ''}${number(value)}`;
@@ -220,7 +243,7 @@ function render() {
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   const page = ({ overview: renderOverview, community: renderCommunity, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
-  $('#view-content').innerHTML = ((state.view === 'overview' ? greeting() : '') + page).replaceAll('/sağlık-asistanı', '/healthcare');
+  $('#view-content').innerHTML = page.replaceAll('/sağlık-asistanı', '/healthcare');
   applyOverviewHeight();
   if (['blacklist', 'tickets', 'tools', 'faq', 'access', 'settings'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
   if (state.view === 'overview') void loadLogs(false, true).catch(error => notice(error.message, true));
@@ -234,7 +257,7 @@ async function loadGuild(guildId) {
   $('#view-content').innerHTML = '<div class="loading">Sunucu bilgileri yükleniyor…</div>';
   const guild = await api(`/api/guilds/${guildId}`);
   if (version !== guildLoadVersion) return;
-  state.guild = guild; state.dirty = false; render();
+  state.guild = guild; state.dirty = false; applyAppearance(guild.settings); render();
 }
 function changeView(view) {
   if (state.dirty && !confirm('Kaydedilmemiş değişiklikleriniz var. Bu bölümden ayrılmak istiyor musunuz?')) return;
@@ -274,7 +297,6 @@ document.addEventListener('click', async event => {
     if (button.id === 'menu-toggle') { setMenuOpen(!document.body.classList.contains('menu-open')); return; }
     if (button.id === 'menu-backdrop') { setMenuOpen(false); return; }
     if (button.id === 'toggle-code') { const input = $('#login-code'), showing = input.type === 'text'; input.type = showing ? 'password' : 'text'; button.textContent = showing ? 'Göster' : 'Gizle'; button.setAttribute('aria-label', showing ? 'Kodu göster' : 'Kodu gizle'); return; }
-    if (button.id === 'use-location') { if (!navigator.geolocation) throw new Error('Konum özelliği bu tarayıcıda kullanılamıyor.'); button.disabled = true; navigator.geolocation.getCurrentPosition(position => void loadWeather(position.coords.latitude, position.coords.longitude), () => notice('Konum izni verilmedi; varsayılan şehir gösteriliyor.', true), { timeout: 8000, maximumAge: 600000 }); return; }
     if (button.dataset.view || button.dataset.go) { if (state.guild) { changeView(button.dataset.view || button.dataset.go); setMenuOpen(false); } return; }
     if (button.dataset.moveView) {
       const group = Object.values(navGroups).find(views => views.includes(button.dataset.moveView));
@@ -290,6 +312,7 @@ document.addEventListener('click', async event => {
     }
     if (button.id === 'refresh') { if (state.guild && (!state.dirty || confirm('Kaydedilmemiş değişiklikleri silip yenilemek istiyor musunuz?'))) await loadGuild(state.guild.id); }
     if (button.id === 'reset-overview-height') { localStorage.removeItem(overviewHeightKey); notice('Genel bakış kart boyutu sıfırlandı.'); }
+    if (button.id === 'reset-appearance') { $('#panel-logo-url').value = ''; $('#panel-banner-url').value = ''; state.dirty = true; return; }
     if (button.id === 'logout') { await api('/auth/logout', { method: 'POST', body: '{}' }); location.reload(); }
     if (button.id === 'add-response') { if ($$('.response-row').length >= 50) throw new Error('En fazla 50 otomatik cevap ekleyebilirsiniz.'); $('#responses').insertAdjacentHTML('beforeend', responseRow()); $('#responses-empty').hidden = true; state.dirty = true; $('#responses').lastElementChild.querySelector('input').focus(); }
     if (button.classList.contains('remove-response')) { button.closest('.response-row').remove(); $('#responses-empty').hidden = Boolean($$('.response-row').length); state.dirty = true; }
@@ -299,6 +322,19 @@ document.addEventListener('click', async event => {
     if (button.id === 'refresh-boosted-event') { button.disabled = true; state.guild.boostedEvent = await guildApi('boosted-event', { method: 'POST', body: '{}' }); render(); notice(state.guild.boostedEvent.error ? state.guild.boostedEvent.error : 'Boosted Event kontrol edildi ve kanala bildirildi.', Boolean(state.guild.boostedEvent.error)); }
     if (button.id === 'more-logs') await loadLogs(true);
     if (button.id === 'publish-ticket') { await guildApi('tickets', { method: 'POST', body: '{}' }); notice('Destek düğmesi seçilen kanala yayımlandı.'); }
+    if (button.dataset.editFaq) {
+      const item = state.faqRecords.find(record => record.id === button.dataset.editFaq);
+      if (!item) throw new Error('Düzenlenecek SSS kaydı bulunamadı.');
+      const form = $('#faq-form'); form.dataset.editId = item.id; state.editingFaqId = item.id;
+      $('#faq-form-title').textContent = 'Soru ve cevabı düzenle';
+      $('#faq-question').value = item.question || ''; $('#faq-answer').value = item.answer || '';
+      $('#faq-preview').innerHTML = `<strong>${escape(item.question || 'Soru')}</strong><p>${escape(item.answer || 'Cevap')}</p>`;
+      $('[name="faq-action"][value="draft"]', form).hidden = true;
+      const primary = $('[name="faq-action"][value="publish"]', form); primary.textContent = 'Değişiklikleri kaydet';
+      $('#cancel-faq-edit').hidden = false; form.scrollIntoView({ behavior: 'smooth', block: 'start' }); $('#faq-question').focus();
+      return;
+    }
+    if (button.id === 'cancel-faq-edit') { state.editingFaqId = null; state.dirty = false; render(); return; }
     if (button.dataset.removeRecord) {
       const action = button.dataset.ticketAction === 'delete' ? 'Bu Discord kanalı kalıcı olarak silinecek.' : button.dataset.ticketAction === 'close' ? 'Bu destek bileti kapatılacak.' : 'Bu kayıt kaldırılacak.';
       if (!confirm(`${action}\n\nİşleme devam etmek istiyor musunuz?`)) return;
@@ -332,7 +368,8 @@ document.addEventListener('change', async event => {
 document.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target, button = $('button[type="submit"],button:not([type])', form);
-  $('#guild-select').disabled = true;
+  const guildSelect = $('#guild-select');
+  if (guildSelect) guildSelect.disabled = true;
   if (button) button.disabled = true;
   notice('');
   try {
@@ -349,21 +386,31 @@ document.addEventListener('submit', async event => {
     if (form.id === 'responders-form') await saveSettings({ responderEnabled: $('#responder-enabled').checked, responses: $$('.response-row').map(row => ({ trigger: $('[name="trigger"]', row).value.trim(), reply: $('[name="reply"]', row).value.trim() })) });
     if (form.id === 'music-settings-form') await saveSettings({ musicEnabled: $('#music-enabled').checked, musicVolume: Number($('#default-volume').value), djRoleId: $('#dj-role').value || null });
     if (form.id === 'settings-form') await saveSettings({ logChannelId: $('#log-channel').value || null });
+    if (form.id === 'appearance-form') {
+      await saveSettings({ panelLogoUrl: $('#panel-logo-url').value.trim() || null, panelBannerUrl: $('#panel-banner-url').value.trim() || null });
+      if (state.guild.settings.panelLogoUrl) localStorage.setItem('pitstop-logo-url', state.guild.settings.panelLogoUrl); else localStorage.removeItem('pitstop-logo-url');
+      applyAppearance(state.guild.settings); notice('Panel logosu ve banner güncellendi.');
+    }
     if (form.id === 'boosted-form') await saveSettings({ boostedEventEnabled: $('#boosted-event-enabled').checked, boostedEventChannelId: $('#boosted-event-channel').value || null });
     if (form.id === 'faq-settings-form') await saveSettings({ faqEnabled: $('#faq-enabled').checked, faqChannelId: $('#faq-channel').value || null });
-    if (form.id === 'faq-form') { const draft = event.submitter?.value === 'draft'; await guildApi('faqs', { method: 'POST', body: JSON.stringify({ question: $('#faq-question').value.trim(), answer: $('#faq-answer').value.trim(), draft }) }); form.reset(); state.dirty = false; await loadFeatureRecords(); notice(draft ? 'SSS taslağı kaydedildi.' : 'Soru ve cevap Discord kanalına yayımlandı.'); }
+    if (form.id === 'faq-form') {
+      const draft = event.submitter?.value === 'draft', editId = form.dataset.editId;
+      await guildApi('faqs', { method: editId ? 'PUT' : 'POST', body: JSON.stringify({ id: editId, question: $('#faq-question').value.trim(), answer: $('#faq-answer').value.trim(), draft }) });
+      form.reset(); delete form.dataset.editId; state.editingFaqId = null; state.dirty = false; await loadFeatureRecords();
+      render(); notice(editId ? 'SSS kaydı ve bağlı Discord mesajı güncellendi.' : draft ? 'SSS taslağı kaydedildi.' : 'Soru ve cevap Discord kanalına yayımlandı.');
+    }
     if (form.id === 'play-form') { state.guild.music = await guildApi('music', { method: 'POST', body: JSON.stringify({ action: 'play', query: $('#query').value.trim() }) }); render(); notice('Parça çalma sırasına eklendi.'); }
     if (form.id === 'volume-form') { state.guild.music = await guildApi('music', { method: 'POST', body: JSON.stringify({ action: 'volume', volume: Number($('#volume').value) }) }); notice('Ses seviyesi güncellendi.'); }
   } catch (error) { if (form.id === 'code-login-form') $('#login-error').textContent = error.message; notice(error.message, true); }
-  finally { if (button) button.disabled = false; $('#guild-select').disabled = false; }
+  finally { if (button) button.disabled = false; if (guildSelect) guildSelect.disabled = false; }
 });
 window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
 
-Object.assign(logTypeNames, { 'panel.login': 'Panel girişi', 'settings.detail': 'Ayar ayrıntısı', 'discord.audit': 'Discord yetkili işlemi', 'blacklist.updated': 'Kara liste', 'protection.phishing': 'Oltalama engellendi', 'protection.spam': 'Spam engellendi', 'reminder.created': 'Hatırlatıcı oluşturuldu', 'reminder.sent': 'Hatırlatıcı gönderildi', 'reminder.failed': 'Hatırlatıcı hatası', 'health.sent': 'Mola hatırlatması', 'ticket.opened': 'Destek açıldı', 'ticket.closed': 'Destek kapandı', 'ticket.deleted': 'Destek kanalı silindi', 'defense.opened': 'Savunma odası açıldı', 'defense.reply': 'Üye savunması', 'defense.staff_reply': 'Yetkili yanıtı', 'conversation.message': 'Özel oda mesajı', 'moderation.warning': 'Üye uyarıldı', 'access.updated': 'Kurulum yetkisi', 'faq.published': 'SSS yayımlandı', 'faq.deleted': 'SSS kaydı kaldırıldı', 'boosted.announced': 'Boosted Event duyurusu' });
+Object.assign(logTypeNames, { 'panel.login': 'Panel girişi', 'settings.detail': 'Ayar ayrıntısı', 'discord.audit': 'Discord yetkili işlemi', 'blacklist.updated': 'Kara liste', 'protection.phishing': 'Oltalama engellendi', 'protection.spam': 'Spam engellendi', 'reminder.created': 'Hatırlatıcı oluşturuldu', 'reminder.sent': 'Hatırlatıcı gönderildi', 'reminder.failed': 'Hatırlatıcı hatası', 'health.sent': 'Mola hatırlatması', 'ticket.opened': 'Destek açıldı', 'ticket.closed': 'Destek kapandı', 'ticket.deleted': 'Destek kanalı silindi', 'defense.opened': 'Savunma odası açıldı', 'defense.reply': 'Üye savunması', 'defense.staff_reply': 'Yetkili yanıtı', 'conversation.message': 'Özel oda mesajı', 'moderation.warning': 'Üye uyarıldı', 'access.updated': 'Kurulum yetkisi', 'faq.published': 'SSS yayımlandı', 'faq.updated': 'SSS düzenlendi', 'faq.deleted': 'SSS kaydı kaldırıldı', 'boosted.announced': 'Boosted Event duyurusu' });
 function renderBlacklist(settingsOnly = false) {
-  const settings = `<form id="blacklist-settings" class="card form-stack">${toggle('blacklist-on-leave', 'Ayrılan üyeyi kara listeye ekle', 'Kayıt tutulur; kişiyi otomatik yasaklamaz. Yeniden katılırsa kayıt korunur.', state.guild.settings.blacklistOnLeave)}<button class="button primary">Kaydet</button></form>`;
+  const settings = `<form id="blacklist-settings" class="card form-stack">${toggle('blacklist-on-leave', 'Ayrılan üyeyi kara listeye ekle', 'Kayıt tutulur; kişiyi otomatik yasaklamaz. Yeniden katılırsa kayıt korunur.', state.guild.settings.blacklistOnLeave)}<div class="form-actions"><button class="button primary">Ayarı kaydet</button></div></form>`;
   if (settingsOnly) return settings;
-  return `<div class="grid-2">${settings}<form id="blacklist-add" class="card form-stack"><h3>Elle kayıt ekle</h3><label>Kullanıcı kimliği<input id="blacklist-user" required pattern="[0-9]{17,20}" maxlength="20"></label><label>Sebep<input id="blacklist-reason" required maxlength="1000"></label><button class="button primary">Kara listeye ekle</button></form><section class="card wide"><div class="card-header"><h3>Kara liste kayıtları</h3><input class="record-filter" type="search" placeholder="Üye veya sebep ara" aria-label="Kara listede ara"></div><div id="blacklist-records">Yükleniyor…</div></section></div>`;
+  return `<div class="grid-2 balanced-grid">${settings}<form id="blacklist-add" class="card form-stack"><div><h3>Elle kayıt ekle</h3><p class="muted tiny">Discord kullanıcı kimliği ve kayıt sebebiyle manuel bir kara liste kaydı oluşturun.</p></div><label>Kullanıcı kimliği<input id="blacklist-user" required pattern="[0-9]{17,20}" maxlength="20"></label><label>Sebep<input id="blacklist-reason" required maxlength="1000"></label><div class="form-actions"><button class="button primary">Kara listeye ekle</button></div></form><section class="card wide"><div class="card-header"><h3>Kara liste kayıtları</h3><input class="record-filter" type="search" placeholder="Üye veya sebep ara" aria-label="Kara listede ara"></div><div id="blacklist-records">Yükleniyor…</div></section></div>`;
 }
 function renderProtection() {
   const s = state.guild.settings, p = state.guild.protection || {};
@@ -401,7 +448,7 @@ function featureActions(resource, item) {
     return actions.length ? `<div class="record-actions">${actions.join('')}</div>` : escape(item.status);
   }
   if (resource === 'blacklist') return `<button class="button danger" data-resource="${resource}" data-remove-record="${escape(item.id)}">Kaldır</button>`;
-  if (resource === 'faqs') return `<div class="record-actions"><span class="badge ${item.status === 'draft' ? 'off' : 'on'}">${item.status === 'draft' ? 'Taslak' : 'Yayında'}</span><button class="button danger" data-resource="faqs" data-remove-record="${escape(item.id)}" ${item.messageId ? 'data-has-discord-message="true"' : ''}>Kaydı kaldır</button></div>`;
+  if (resource === 'faqs') return `<div class="record-actions"><span class="badge ${item.status === 'draft' ? 'off' : 'on'}">${item.status === 'draft' ? 'Taslak' : 'Yayında'}</span><button class="button subtle" data-edit-faq="${escape(item.id)}">Düzenle</button><button class="button danger" data-resource="faqs" data-remove-record="${escape(item.id)}" ${item.messageId ? 'data-has-discord-message="true"' : ''}>Kaydı kaldır</button></div>`;
   if (item.status === 'open' || (resource === 'reminders' && item.userId === state.me.user.id && item.status === 'pending')) return `<button class="button danger" data-resource="${resource}" data-remove-record="${escape(item.id)}">Kapat / iptal et</button>`;
   return escape(item.status);
 }
@@ -414,11 +461,10 @@ async function loadFeatureRecords() {
     if (state.guild?.id !== guildId || state.view !== view) return;
     const node = $(`#${resource}-records`);
     if (!node) continue;
+    if (resource === 'faqs') state.faqRecords = items;
     node.innerHTML = items.length ? `<div class="table-wrap"><table><thead><tr><th>${resource === 'faqs' ? 'SORU' : 'ÜYE'}</th><th>${resource === 'faqs' ? 'CEVAP' : 'AYRINTI'}</th><th>TARİH / SAAT</th><th>İŞLEM</th></tr></thead><tbody>${items.map(item => `<tr><td>${escape(item.question || item.name || item.userId || item.id)}<small class="muted">${escape(item.createdByName || item.userId || item.id)}</small></td><td>${escape(item.answer || item.reason || item.text || item.status)}${item.dueAt ? `<p>Hatırlatma: ${date(item.dueAt)}</p>` : ''}${['tickets', 'cases'].includes(resource) && item.status !== 'deleted' ? `<a href="https://discord.com/channels/${guildId}/${item.id}" target="_blank" rel="noopener noreferrer">Discord’da aç</a>` : ''}${resource === 'faqs' && item.channelId && item.messageId ? `<p><a href="https://discord.com/channels/${guildId}/${item.channelId}/${item.messageId}" target="_blank" rel="noopener noreferrer">Discord mesajını aç</a></p>` : ''}</td><td>${date(item.createdAt)}</td><td>${featureActions(resource, item)}</td></tr>`).join('')}</tbody></table></div>` : empty('Henüz kayıt yok.');
   }
 }
-setInterval(() => { if ($('#local-clock')) $('#local-clock').textContent = date(Date.now()); }, 1000);
-
 function updateLoginClock() {
   const now = new Date(), seconds = now.getSeconds(), minutes = now.getMinutes() + seconds / 60, hours = (now.getHours() % 12) + minutes / 60;
   const hour = $('.clock-hand.hour'), minute = $('.clock-hand.minute'), second = $('.clock-hand.second');
@@ -428,47 +474,40 @@ function updateLoginClock() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if ($('#login-datetime')) $('#login-datetime').innerHTML = `<strong>${escape(now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' }))}</strong><span>${escape(now.toLocaleTimeString('tr-TR'))} · ${escape(zone)}</span>`;
 }
-async function loadWeather(lat, lon) {
+async function loadWeather() {
   const weather = $('#weather');
   try {
-    const params = Number.isFinite(lat) && Number.isFinite(lon) ? `?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}` : '';
-    const data = await api(`/api/weather${params}`);
-    weather.innerHTML = `<div><strong>${escape(data.city)}</strong><span>☁ ${number(data.temperature)}°C · ${escape(data.description)}</span><small>Hissedilen ${number(data.apparent)}°C</small></div><button id="use-location" class="button subtle" type="button">Konumumu kullan</button>`;
-  } catch { weather.innerHTML = '<span>Hava durumu şu anda kullanılamıyor</span><button id="use-location" class="button subtle" type="button">Konumumu kullan</button>'; }
+    const data = await api('/api/weather');
+    weather.textContent = `${data.city} · ${number(data.temperature)}°C · ${data.description} · Hissedilen ${number(data.apparent)}°C`;
+  } catch { weather.textContent = 'İstanbul hava durumu şu anda kullanılamıyor'; }
 }
-setInterval(updateLoginClock, 1000);
+let loginClockTimer;
 
 async function boot() {
   const theme = localStorage.getItem('pitstop-theme') === 'light' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = theme; updateThemeButtons(); updateLoginClock(); void loadWeather();
+  document.documentElement.dataset.theme = theme; updateThemeButtons(); applyAppearance();
   state.navOrder = savedNavOrder(); applyNavOrder();
   if (staticHosting) {
-    $('#connection-label').textContent = 'GitHub Pages';
-    if (livePanelUrl) {
-      $('#login-link').href = `${livePanelUrl}/auth/login`;
-      $('#setup-note').textContent = 'Discord girişi ve canlı ayarlar güvenli bot sunucusunda açılır.';
-    } else {
-      $('#login-link').hidden = true;
-      $('#setup-note').textContent = 'Site yayında. Canlı yönetim panelinin açılması için bot sunucusu ve Discord erişim ayarları bekleniyor.';
-    }
+    if (livePanelUrl) { location.replace(new URL('/', livePanelUrl).href); return; }
+    $('#login-error').textContent = 'Canlı panel bağlantısı henüz ayarlanmadı.';
     return;
   }
+  updateLoginClock(); loginClockTimer = setInterval(updateLoginClock, 1000); void loadWeather();
   try {
     const status = await api('/api/status');
+    applyAppearance(status.appearance);
     $('#version-label').textContent = `Pit-Stop v${status.version} · ${status.build}`;
     $('#connection-dot').classList.toggle('online', status.ready);
     $('#connection-label').textContent = status.ready ? 'Discord bağlantısı aktif' : 'Discord bağlantısı bekleniyor';
-    if (!status.loginConfigured) { $('#login-link').hidden = true; $('#setup-note').textContent = 'Panel hazır. Discord OAuth2 bilgileri eklendiğinde güvenli giriş açılacak.'; }
     try { state.me = await api('/api/me'); } catch (error) { if (error.status !== 401) throw error; return; }
     document.body.classList.remove('logged-out');
     state.csrf = state.me.csrf;
-    $('#user-label').textContent = state.me.user.name;
+    $('#user-label').textContent = greetingText();
     $('#logout').hidden = false;
-    const guilds = await api('/api/guilds');
-    if (!guilds.length) { $('#setup-note').textContent = 'Yönetebileceğiniz bir sunucu bulunamadı. Pit-Stop’u sunucunuza ekleyin ve Sunucuyu Yönet izninizi kontrol edin.'; $('#login-link').hidden = true; return; }
-    $('#guild-select').innerHTML = guilds.map(guild => `<option value="${escape(guild.id)}">${escape(guild.name)}</option>`).join('');
-    $('#guild-select').hidden = false; $('#login-panel').hidden = true; $('#workspace').hidden = false;
-    await loadGuild(guilds[0].id);
+    state.guilds = await api('/api/guilds');
+    if (!state.guilds.length) { throw new Error('Yönetebileceğiniz bir sunucu bulunamadı. Bot kurulumunu ve Sunucuyu Yönet izninizi kontrol edin.'); }
+    clearInterval(loginClockTimer); $('#login-panel').hidden = true; $('#workspace').hidden = false;
+    await loadGuild(state.guilds[0].id);
   } catch (error) { notice(error.message, true); }
 }
 await boot();

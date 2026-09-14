@@ -6,7 +6,6 @@ export const SITE_UPDATE_DELAY = 90_000;
 const STALE_RETRY_DELAY = 20_000;
 const MAX_STALE_RETRIES = 15;
 const TYPE_NAMES = Object.freeze({ '4': 'Circuit', '9': 'Sprint', '19': 'Drag', '22': 'Meeting Place', '24': 'Team Escape', '12': 'Pursuit Outrun' });
-const CLASS_EMOJIS = Object.freeze({ S: '🟣', A: '🔴', B: '🟠', C: '🟡', D: '🟢', E: '🔵' });
 
 const clean = value => String(value || '').replace(/<[^>]*>/gu, '').replace(/&middot;|&#183;/giu, '·').replace(/&amp;/giu, '&').trim();
 
@@ -21,9 +20,14 @@ export function nextBoostedRefreshDelay(timestamp = Date.now(), updateDelay = SI
   return timestamp < currentWindowRefresh ? currentWindowRefresh - timestamp : boundary + HALF_HOUR + updateDelay - timestamp;
 }
 
-export function classEmoji(className) {
-  const match = String(className || '').match(/\bClass\s+([A-Z])/iu);
-  return CLASS_EMOJIS[match?.[1]?.toUpperCase()] || '🏁';
+export function classEmoji(className, guild) {
+  const match = String(className || '').match(/\bClass\s+([A-Z](?:[12])?)/iu);
+  const token = match?.[1]?.toUpperCase();
+  if (!token) return '';
+  const candidates = [`${token}class`.toLowerCase(), ...(token === 'S' ? ['s1class'] : [])];
+  const emoji = [...(guild?.emojis?.cache?.values?.() || [])]
+    .find(item => candidates.includes(String(item.name || '').toLowerCase()));
+  return emoji ? `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>` : '';
 }
 
 export function normalizeBoostedEvent(races) {
@@ -80,17 +84,17 @@ export function createBoostedEventMonitor(client, store, config = {}, { fetcher 
       try {
         let event = await enrich(await requestRaces());
         const checkedAt = now();
-        if (event) event = { ...event, url: eventUrl(event.id), classEmoji: classEmoji(event.className), endsAt: checkedAt + nextHalfHourDelay(checkedAt) };
+        const guild = client.guilds.cache.get(guildId);
+        if (event) event = { ...event, url: eventUrl(event.id), classEmoji: classEmoji(event.className, guild), endsAt: checkedAt + nextHalfHourDelay(checkedAt) };
         const settings = store.getSettings(guildId);
         const channelId = settings.boostedEventChannelId || config.boostedEventChannelId;
         const changed = Boolean(event && (!previous.event || previous.event.id !== event.id || previous.event.className !== event.className));
         let announcedAt = previous.announcedAt || null;
         if (event && settings.boostedEventEnabled && channelId && (changed || forceAnnouncement)) {
-          const guild = client.guilds.cache.get(guildId);
           const channel = await guild?.channels.fetch(channelId).catch(() => null);
           if (!channel?.isTextBased?.()) throw new Error('Boosted Event bildirim kanalı bulunamadı veya yazılabilir değil.');
           await channel.send({
-            content: `⚡ **BOOSTED EVENT**\n**Etkinlik:** ${event.name}\n${event.url}\n**Sınıf:** ${event.classEmoji} ${event.className}\n**Tür:** ${event.type}\n**Bitiş:** <t:${Math.floor(event.endsAt / 1000)}:t> (<t:${Math.floor(event.endsAt / 1000)}:R>)`,
+            content: `⚡ **BOOSTED EVENT**\n**Etkinlik:** ${event.name}\n${event.url}\n**Sınıf:** ${event.classEmoji ? `${event.classEmoji} ` : ''}${event.className}\n**Tür:** ${event.type}\n**Bitiş:** <t:${Math.floor(event.endsAt / 1000)}:t> (<t:${Math.floor(event.endsAt / 1000)}:R>)`,
             allowedMentions: { parse: [] },
           });
           announcedAt = checkedAt;

@@ -38,6 +38,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   panelAccessRoleIds: [],
   panelSessionHours: 8,
   panelCodeMinutes: 2,
+  panelLogoUrl: null,
+  panelBannerUrl: null,
 });
 const BOOLEAN_KEYS = new Set(['leaveEnabled', 'autoRoleEnabled', 'responderEnabled', 'musicEnabled', 'blacklistOnLeave', 'antiSpamEnabled', 'antiPhishingEnabled', 'ticketEnabled', 'defenseEnabled', 'healthEnabled', 'musicRestricted', 'boostedEventEnabled', 'faqEnabled']);
 const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
@@ -104,6 +106,13 @@ function validatePatch(patch) {
     } else if (key === 'musicVolume') {
       if (!Number.isInteger(value) || value < 1 || value > 100) throw new TypeError('Ses düzeyi 1–100 arasında bir tam sayı olmalı.');
       result[key] = value;
+    } else if (['panelLogoUrl', 'panelBannerUrl'].includes(key)) {
+      if (value === null || value === '') { result[key] = null; continue; }
+      if (typeof value !== 'string' || value.length > 1000) throw new TypeError('Görsel adresi en fazla 1000 karakter olmalı.');
+      let parsed;
+      try { parsed = new URL(value.trim()); } catch { throw new TypeError('Geçerli bir HTTPS görsel adresi girin.'); }
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) throw new TypeError('Görsel adresi güvenli bir HTTPS bağlantısı olmalı.');
+      result[key] = parsed.href;
     } else if (key === 'responses') {
       if (!Array.isArray(value) || value.length > 50) throw new TypeError('En fazla 50 otomatik yanıt tanımlayabilirsin.');
       const seen = new Set();

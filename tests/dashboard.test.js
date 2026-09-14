@@ -160,6 +160,7 @@ test('OAuth HTTP flow issues protected state/session cookies and attempts silent
   assert.equal(session.target.searchParams.get('prompt'), 'none');
   assert.ok(session.state.length >= 32);
   for (const attribute of ['HttpOnly', 'SameSite=Lax', 'Secure']) assert.ok(session.sessionCookie.includes(attribute));
+  assert.match(session.sessionCookie, /Max-Age=28800/u);
   assert.deepEqual(Object.keys(session.me).sort(), ['csrf', 'installationOwner', 'user']);
   assert.equal(session.me.user.id, USER);
   noSecrets(JSON.stringify(session.me));
@@ -174,7 +175,9 @@ test('one-time Discord codes create one hashed session and cannot be replayed', 
   fixture.store.putRecord(GUILD, 'panel_login_code', hash, { userId: USER, userName: 'Pilot', createdAt: Date.now(), expiresAt: Date.now() + 120_000 });
   const first = await fixture.request('/auth/code', { method: 'POST', headers: { Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
   assert.equal(first.status, 200);
-  const cookie = first.headers.getSetCookie().find(value => value.startsWith('pitstop_session=')).split(';')[0];
+  const sessionCookie = first.headers.getSetCookie().find(value => value.startsWith('pitstop_session='));
+  assert.match(sessionCookie, /Max-Age=28800/u);
+  const cookie = sessionCookie.split(';')[0];
   assert.equal((await fixture.request('/api/me', { headers: { Cookie: cookie } })).status, 200);
   assert.equal(fixture.store.listRecords(GUILD, 'panel_login_code').length, 0);
   assert.equal(JSON.stringify(fixture.store.listRecords(BOT, 'panel_session')).includes(code), false);
@@ -276,6 +279,17 @@ test('panel ticket channel deletion is routed through the staff-only feature gua
   assert.equal(response.status, 200);
   assert.equal(fixture.store.getRecord(GUILD, 'ticket', CHANNEL).status, 'deleted');
   assert.deepEqual(fixture.calls.ticketDeletes, [{ guildId: GUILD, channelId: CHANNEL, actorId: USER }]);
+});
+
+test('published FAQ records can be edited and update their Discord message', async t => {
+  const fixture = await setup(t), session = await fixture.login(), edits = [];
+  fixture.store.putRecord(GUILD, 'faq', 'faq-one', { question: 'Eski soru', answer: 'Eski cevap', status: 'published', channelId: CHANNEL, messageId: '1400000000000000010', createdAt: Date.now() });
+  fixture.channel.messages = { fetch: async () => ({ edit: async payload => edits.push(payload) }) };
+  const response = await fixture.mutation(`/api/guilds/${GUILD}/faqs`, session, { id: 'faq-one', question: 'Yeni soru', answer: 'Yeni cevap' });
+  assert.equal(response.status, 200);
+  assert.equal(fixture.store.getRecord(GUILD, 'faq', 'faq-one').question, 'Yeni soru');
+  assert.deepEqual(edits, [{ content: '❓ **Yeni soru**\nYeni cevap', allowedMentions: { parse: [] } }]);
+  assert.equal(fixture.store.getLogs(GUILD, { type: 'faq.updated' })[0].actorId, USER);
 });
 
 test('unauthenticated APIs and tampered session cookies are rejected', async (t) => {

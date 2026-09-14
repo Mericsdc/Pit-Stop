@@ -277,13 +277,18 @@ test('guild registration removes unsupported context fields without mutating com
   assert.deepEqual(owned.data.toJSON(), before);
 });
 
-test('global registration also refreshes allowed guild commands immediately', async () => {
-  const owned = registrationCommand('panel-giris'), calls = [];
-  const rest = { get: async () => [], post: async (route, options) => calls.push({ route, body: options.body }) };
+test('allowed guild registration removes owned global duplicates and keeps one guild command', async () => {
+  const owned = registrationCommand('panel-giris'), calls = [], removed = [];
+  const globalRoute = Routes.applicationCommands(CLIENT);
+  const rest = {
+    get: async route => route === globalRoute ? [{ id: 'owned-global', name: 'panel-giris' }, { id: 'external-global', name: 'external' }] : [],
+    post: async (route, options) => calls.push({ route, body: options.body }),
+    delete: async route => removed.push(route),
+  };
   await registerCommands(rest, { clientId: CLIENT, allowedGuildIds: [GUILD] }, [owned]);
-  assert.deepEqual(calls.map(item => item.route), [Routes.applicationCommands(CLIENT), Routes.applicationGuildCommands(CLIENT, GUILD)]);
-  assert.deepEqual(calls[0].body.contexts, [0]);
-  assert.equal(Object.hasOwn(calls[1].body, 'contexts'), false);
+  assert.deepEqual(removed, [`${globalRoute}/owned-global`]);
+  assert.deepEqual(calls.map(item => item.route), [Routes.applicationGuildCommands(CLIENT, GUILD)]);
+  assert.equal(Object.hasOwn(calls[0].body, 'contexts'), false);
 });
 
 test('registration propagates Discord failures and stops before advertising success', async () => {

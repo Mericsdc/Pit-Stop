@@ -13,7 +13,7 @@
 <body class="logged-out">
   <a class="skip-link" href="#main">İçeriğe geç</a>
   <aside class="sidebar">
-    <a class="brand" href="/"><img src="/assets/logo.webp" alt="" width="48" height="48"><span>PIT<span class="accent">-STOP</span><small>KONTROL MERKEZİ</small></span></a>
+    <a class="brand" href="/"><img id="panel-logo" src="/assets/logo.webp" alt="" width="48" height="48"><span>PIT<span class="accent">-STOP</span><small>KONTROL MERKEZİ</small></span></a>
     <nav id="sidebar-nav" aria-label="Panel bölümleri">
       <section class="nav-section" data-nav-group="general"><h2>GENEL</h2><div class="nav-items"><button data-view="overview" class="nav-button active"><span aria-hidden="true">◈</span> Genel bakış</button></div></section>
       <section class="nav-section" data-nav-group="community"><h2>OYUN VE TOPLULUK</h2><div class="nav-items">
@@ -29,17 +29,17 @@
     <div class="sidebar-bottom"><div><span class="status-dot" id="connection-dot"></span><span id="connection-label">Bağlantı kontrol ediliyor</span></div><div class="theme-buttons" role="group" aria-label="Görünüm teması"><button type="button" data-theme-choice="dark" aria-label="Koyu tema" title="Koyu tema">☾</button><button type="button" data-theme-choice="light" aria-label="Aydınlık tema" title="Aydınlık tema">☀</button></div><small id="version-label">Pit-Stop</small></div>
   </aside>
   <div class="shell">
-    <header class="topbar"><button id="menu-toggle" class="menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false">☰</button><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><label class="sr-only" for="guild-select">Sunucu seç</label><select id="guild-select" hidden></select><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
+    <header class="topbar"><button id="menu-toggle" class="menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false">☰</button><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
     <button id="menu-backdrop" class="menu-backdrop" type="button" aria-label="Menüyü kapat" hidden></button>
     <main id="main" tabindex="-1">
-      <section class="hero" id="hero"><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p><span class="hero-tag">NIGHTRIDERZ</span></div></section>
+      <section class="hero" id="hero"><img id="hero-banner" class="hero-banner" src="/assets/banner.webp" alt=""><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p><span class="hero-tag">NIGHTRIDERZ</span></div></section>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-      <section id="login-panel" class="login-screen"><div class="login-lasers" aria-hidden="true"></div><div class="login-card">
-        <div class="login-brand"><img src="/assets/logo.webp" alt="" width="52" height="52"><div><strong>PIT-STOP</strong><small>KONTROL MERKEZİ</small></div></div><h1>Hoş geldiniz</h1><p>Kontrol merkezine erişmek için Discord botundan aldığın tek kullanımlık giriş kodunu kullan.</p>
+      <section id="login-panel" class="login-screen"><div class="login-card">
+        <div class="login-brand"><img id="login-logo" src="/assets/logo.webp" alt="" width="52" height="52"><div><strong>PIT-STOP</strong><small>KONTROL MERKEZİ</small></div></div><h1>Hoş geldiniz</h1><p>Kontrol merkezine erişmek için Discord botundan aldığın tek kullanımlık giriş kodunu kullan.</p>
         <div class="analog-clock" aria-hidden="true"><span class="clock-number n12">12</span><span class="clock-number n3">3</span><span class="clock-number n6">6</span><span class="clock-number n9">9</span><span class="clock-hand hour"></span><span class="clock-hand minute"></span><span class="clock-hand second"></span><span class="clock-center"></span></div><div id="login-datetime" class="login-datetime" aria-live="polite"></div>
-        <div id="weather" class="weather"><span>Hava durumu yükleniyor…</span><button id="use-location" class="button subtle" type="button">Konumumu kullan</button></div>
+        <div id="weather" class="login-weather" aria-live="polite">İstanbul hava durumu yükleniyor…</div>
         <form id="code-login-form" class="form-stack"><label for="login-code">Tek kullanımlık giriş kodu</label><div class="code-input"><input id="login-code" type="password" autocomplete="one-time-code" spellcheck="false" maxlength="64" required><button id="toggle-code" type="button" class="button subtle" aria-label="Kodu göster">Göster</button></div><button class="button primary" type="submit">Panele giriş yap</button><p id="login-error" class="form-error" role="alert" aria-live="assertive"></p></form>
-        <details class="login-help"><summary>Nasıl kod alabilirim?</summary><p>Discord sunucusunda <code>/panel-giris</code> komutunu kullanın. Bot size yalnızca sizin görebileceğiniz tek kullanımlık kodu verir.</p><a href="https://discord.gg/taen7szx4" target="_blank" rel="noopener noreferrer">Discord sunucusunu aç ↗</a></details><div class="oauth-divider"><span>veya</span></div><a class="button subtle oauth-button" id="login-link" href="/auth/login">Discord ile giriş yap ↗</a><p id="setup-note" class="muted tiny"></p><p class="security-note">Giriş kodları ayarlanan süre boyunca geçerlidir ve yalnızca bir kez kullanılabilir.</p>
+        <details class="login-help"><summary>Nasıl kod alabilirim?</summary><p>Discord sunucusunda <code>/panel-giris</code> komutunu kullanın. Bot size yalnızca sizin görebileceğiniz tek kullanımlık kodu verir.</p><a href="https://discord.gg/taen7szx4" target="_blank" rel="noopener noreferrer">Discord sunucusunu aç ↗</a></details><p class="security-note">Giriş kodu ayarlanan kısa süre boyunca ve yalnızca bir kez kullanılabilir. Başarılı panel oturumu en fazla 8 saat sonra kapanır.</p>
       </div></section>
       <section id="workspace" hidden>
         <div class="page-heading"><div><div class="section-kicker" id="guild-name">SUNUCUNUZ</div><h2 id="view-title">Genel bakış</h2></div><button class="button subtle" id="refresh">↻ Yenile</button></div>
