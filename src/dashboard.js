@@ -200,11 +200,11 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     if (secure) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(request.url, base);
-      if (staticFiles.has(url.pathname) && request.method === 'GET') {
+      if (staticFiles.has(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
         const [file, type] = staticFiles.get(url.pathname);
         const body = await readFile(fileURLToPath(new URL(`../public/${file}`, import.meta.url)));
         response.writeHead(200, { 'Content-Type': type });
-        response.end(body);
+        response.end(request.method === 'HEAD' ? undefined : body);
         return;
       }
       if (url.pathname === '/api/status' && request.method === 'GET') {
