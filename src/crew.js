@@ -110,7 +110,7 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       const previous = store.getRecord(guildId, 'crew_current', 'current');
       const previousByName = new Map((previous?.members || []).map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       let profileFailures = 0;
-      const profiles = await mapLimit(roster, 4, async member => {
+      const profiles = await mapLimit(roster, 1, async member => {
         const old = previousByName.get(member.name.toLocaleLowerCase('en-US'));
         try { return { ...member, ...normalizeProfile(await request('GetPlayerNext', [member.name]), member.name), profileAvailable: true }; }
         catch { profileFailures++; return { ...member, lastLogin: old?.lastLogin || null, eventsCompleted: old?.eventsCompleted || 0, driverScore: old?.driverScore || 0, level: old?.level || 0, profileAvailable: Boolean(old?.profileAvailable) }; }
