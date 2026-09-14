@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { ChannelType, Collection, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { createDashboard, validateGuildSettings } from '../src/dashboard.js';
@@ -21,7 +22,8 @@ async function setup(t, configOverrides = {}) {
   const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [], crew: [], ticketCloses: [], ticketDeletes: [] };
   const member = {
     id: USER, permissions: new PermissionsBitField(adminPermissions),
-    roles: { highest: { comparePositionTo: (role) => 10 - role.position } },
+    user: { id: USER, username: 'pilot', globalName: 'Pilot', avatar: null },
+    roles: { cache: new Collection([[ROLE, { id: ROLE }]]), highest: { comparePositionTo: (role) => 10 - role.position } },
   };
   const botMember = { id: BOT, permissions: new PermissionsBitField(PermissionFlagsBits.Administrator) };
   const role = { id: ROLE, name: 'Üye', position: 2, editable: true, managed: false, hexColor: '#ff4400' };
@@ -164,6 +166,20 @@ test('OAuth HTTP flow issues protected state/session cookies and attempts silent
   const saved = fixture.store.listRecords(BOT, 'panel_session');
   assert.equal(saved.length, 1);
   noSecrets(JSON.stringify(saved));
+});
+
+test('one-time Discord codes create one hashed session and cannot be replayed', async (t) => {
+  const fixture = await setup(t);
+  const code = 'A'.repeat(43), hash = createHash('sha256').update(code).digest('hex');
+  fixture.store.putRecord(GUILD, 'panel_login_code', hash, { userId: USER, userName: 'Pilot', createdAt: Date.now(), expiresAt: Date.now() + 120_000 });
+  const first = await fixture.request('/auth/code', { method: 'POST', headers: { Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  assert.equal(first.status, 200);
+  const cookie = first.headers.getSetCookie().find(value => value.startsWith('pitstop_session=')).split(';')[0];
+  assert.equal((await fixture.request('/api/me', { headers: { Cookie: cookie } })).status, 200);
+  assert.equal(fixture.store.listRecords(GUILD, 'panel_login_code').length, 0);
+  assert.equal(JSON.stringify(fixture.store.listRecords(BOT, 'panel_session')).includes(code), false);
+  const replay = await fixture.request('/auth/code', { method: 'POST', headers: { Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  assert.equal(replay.status, 401);
 });
 
 test('encrypted panel sessions survive a dashboard restart', async t => {

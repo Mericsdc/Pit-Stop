@@ -2,10 +2,14 @@ import { createServer } from 'node:http';
 import { randomBytes, createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { safeError } from './logger.js';
 
 const random = () => randomBytes(32).toString('base64url');
+const digest = value => createHash('sha256').update(value).digest('hex');
+const packageInfo = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const buildInfo = process.env.PIT_STOP_BUILD || (await readFile(new URL('../BUILD_ID', import.meta.url), 'utf8').catch(() => 'development')).trim();
 const manageGuild = PermissionFlagsBits.ManageGuild;
 const staticFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -65,7 +69,7 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
       throw httpError(400, 'Otomatik rol, sizin ve botun yönetebileceği bir rol olmalı. Rolleri Yönet izni gerekli.');
     }
   }
-  for (const id of [patch.djRoleId, patch.supportRoleId, ...(Array.isArray(patch.musicControllerRoleIds) ? patch.musicControllerRoleIds : [])].filter(Boolean)) {
+  for (const id of [patch.djRoleId, patch.supportRoleId, ...(Array.isArray(patch.musicControllerRoleIds) ? patch.musicControllerRoleIds : []), ...(Array.isArray(patch.panelAccessRoleIds) ? patch.panelAccessRoleIds : [])].filter(Boolean)) {
     if (id === guild.id || !(await guild.roles.fetch(id))) throw httpError(400, 'Seçilen rol bulunamadı veya herkes rolü kullanılamaz.');
   }
   if (patch.ticketCategoryId) { const category = await guild.channels.fetch(patch.ticketCategoryId); if (category?.guildId !== guild.id || category.type !== ChannelType.GuildCategory) throw httpError(400, 'Geçerli bir kategori seçin.'); }
@@ -75,7 +79,7 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
 }
 
 export function createDashboard({ client, store, music, features, crew, boostedEvents, config, logger = () => {}, fetcher = fetch }) {
-  const sessions = new Map(), pendingStates = new Map(), limits = new Map();
+  const sessions = new Map(), pendingStates = new Map(), limits = new Map(), weatherCache = new Map();
   const base = new URL(config.publicUrl);
   const secure = base.protocol === 'https:';
   const configured = Boolean(config.clientSecret && config.sessionSecret);
@@ -98,7 +102,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
   };
   const saveSession = (id, session) => {
     if (!sessionStoreGuildId) return;
-    store.putRecord(sessionStoreGuildId, 'panel_session', id, { user: session.user, csrf: session.csrf, accessToken: seal(session.accessToken), refreshToken: seal(session.refreshToken), accessExpires: session.accessExpires, expires: session.expires, seenGuilds: [...(session.seenGuilds || [])] });
+    store.putRecord(sessionStoreGuildId, 'panel_session', id, { user: session.user, csrf: session.csrf, authType: session.authType || 'oauth', guildId: session.guildId || null, accessToken: seal(session.accessToken), refreshToken: seal(session.refreshToken), accessExpires: session.accessExpires, expires: session.expires, createdAt: session.createdAt || Date.now(), seenGuilds: [...(session.seenGuilds || [])] });
   };
   const deleteSession = id => {
     sessions.delete(id);
@@ -115,6 +119,8 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       map.delete(key);
       if (map === sessions && sessionStoreGuildId) store.deleteRecord(sessionStoreGuildId, 'panel_session', key);
     }
+    if (sessionStoreGuildId) for (const item of store.listRecords(sessionStoreGuildId, 'panel_session', 5000)) if (item.expires <= now) store.deleteRecord(sessionStoreGuildId, 'panel_session', item.id);
+    for (const [key, value] of weatherCache) if (value.expires <= now) weatherCache.delete(key);
   };
   const cleanup = setInterval(clean, 60_000);
   cleanup.unref();
@@ -130,13 +136,14 @@ export function createDashboard({ client, store, music, features, crew, boostedE
   function getSession(request) {
     const raw = cookies(request.headers.cookie).pitstop_session;
     if (!raw) return undefined;
-    const [id, signature] = raw.split('.');
-    if (!id || !constantEqual(signature, sign(id))) return undefined;
+    const [legacyId, signature] = raw.split('.');
+    const legacy = Boolean(legacyId && signature && constantEqual(signature, sign(legacyId)));
+    const id = legacy ? legacyId : digest(raw);
     let session = sessions.get(id);
     if (!session && sessionStoreGuildId) {
       const saved = store.getRecord(sessionStoreGuildId, 'panel_session', id);
       if (saved) try {
-        session = { user: saved.user, csrf: saved.csrf, accessToken: open(saved.accessToken), refreshToken: saved.refreshToken ? open(saved.refreshToken) : null, accessExpires: saved.accessExpires || saved.expires, expires: saved.expires, seenGuilds: new Set(saved.seenGuilds || []) };
+        session = { user: saved.user, csrf: saved.csrf, authType: saved.authType || 'oauth', guildId: saved.guildId || null, accessToken: saved.accessToken ? open(saved.accessToken) : null, refreshToken: saved.refreshToken ? open(saved.refreshToken) : null, accessExpires: saved.accessExpires || saved.expires, expires: saved.expires, createdAt: saved.createdAt, seenGuilds: new Set(saved.seenGuilds || []) };
         sessions.set(id, session);
       } catch { store.deleteRecord(sessionStoreGuildId, 'panel_session', id); }
     }
@@ -145,6 +152,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
   }
 
   async function currentAccessToken(session) {
+    if (session.authType === 'code') throw httpError(401, 'Bu oturum Discord koduyla açıldı.');
     if (!session.accessExpires || session.accessExpires > Date.now() + 60_000) return session.accessToken;
     if (!session.refreshToken) { deleteSession(session.id); throw httpError(401, 'Discord oturumunuzun süresi doldu. Yeniden giriş yapın.'); }
     const tokenResponse = await fetcher('https://discord.com/api/v10/oauth2/token', {
@@ -168,7 +176,13 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     let member;
     try { member = await guild.members.fetch({ user: session.user.id, force: true }); }
     catch { throw httpError(403, 'Bu sunucuyu yönetme yetkiniz yok.'); }
-    if (!member.permissions.has(manageGuild)) throw httpError(403, 'Sunucuyu Yönet izni gerekli.');
+    const settings = store.getSettings(guildId);
+    const hasPanelRole = (settings.panelAccessRoleIds || []).some(roleId => member.roles.cache.has(roleId));
+    if (!member.permissions.has(manageGuild) && !hasPanelRole) {
+      if (session.authType === 'code' || session.seenGuilds?.has(guildId)) deleteSession(session.id);
+      throw httpError(403, 'Panel erişim rolünüz bulunmuyor.');
+    }
+    if (session.authType === 'code' && session.guildId !== guildId) throw httpError(403, 'Bu oturum başka bir sunucu için oluşturuldu.');
     return { guild, member };
   }
 
@@ -189,7 +203,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         return;
       }
       if (url.pathname === '/api/status' && request.method === 'GET') {
-        json(response, 200, { name: 'Pit-Stop', ready: client.isReady(), loginConfigured: configured });
+        json(response, 200, { name: 'Pit-Stop', ready: client.isReady(), loginConfigured: configured, version: packageInfo.version, build: buildInfo || basename(process.cwd()), codeLogin: true });
         return;
       }
       const session = getSession(request);
@@ -202,6 +216,59 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         limits.set(rateKey, bucket);
       }
       if (++bucket.count > (session ? 120 : 30)) throw httpError(429, 'Çok fazla istek. Bir dakika sonra tekrar deneyin.');
+
+      if (url.pathname === '/api/weather' && request.method === 'GET') {
+        const latitude = url.searchParams.has('lat') ? Number(url.searchParams.get('lat')) : Number.NaN;
+        const longitude = url.searchParams.has('lon') ? Number(url.searchParams.get('lon')) : Number.NaN;
+        let lat = latitude, lon = longitude, city = config.weather?.city || 'İstanbul';
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) { lat = Number(config.weather?.latitude) || 41.0082; lon = Number(config.weather?.longitude) || 28.9784; }
+        const cacheKey = `${lat.toFixed(2)}:${lon.toFixed(2)}`, cached = weatherCache.get(cacheKey);
+        if (cached?.expires > Date.now()) { json(response, 200, cached.value); return; }
+        const weatherResponse = await fetcher(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weather_code&timezone=auto`, { signal: AbortSignal.timeout(6000) });
+        if (!weatherResponse.ok) throw httpError(503, 'Hava durumu şu anda kullanılamıyor.');
+        const weather = await weatherResponse.json();
+        const names = { 0: 'Açık', 1: 'Çoğunlukla açık', 2: 'Parçalı bulutlu', 3: 'Kapalı', 45: 'Sisli', 48: 'Kırağılı sis', 51: 'Hafif çiseleme', 53: 'Çiseleme', 55: 'Yoğun çiseleme', 61: 'Hafif yağmur', 63: 'Yağmurlu', 65: 'Kuvvetli yağmur', 71: 'Hafif kar', 73: 'Karlı', 75: 'Yoğun kar', 80: 'Sağanak', 81: 'Sağanak', 82: 'Kuvvetli sağanak', 95: 'Gök gürültülü' };
+        if (Number.isFinite(latitude)) city = 'Konumunuz';
+        const value = { city, temperature: weather.current?.temperature_2m, apparent: weather.current?.apparent_temperature, description: names[weather.current?.weather_code] || 'Değişken', code: weather.current?.weather_code };
+        weatherCache.set(cacheKey, { value, expires: Date.now() + 10 * 60_000 });
+        json(response, 200, value);
+        return;
+      }
+
+      if (url.pathname === '/auth/code' && request.method === 'POST') {
+        if (request.headers.origin !== base.origin) throw httpError(403, 'Giriş isteği doğrulanamadı.');
+        const body = await readJson(request);
+        const supplied = typeof body.code === 'string' ? body.code.trim() : '';
+        if (!/^[A-Za-z0-9_-]{40,64}$/u.test(supplied)) {
+          if (sessionStoreGuildId) store.addLog(sessionStoreGuildId, { type: 'panel.login_failed', message: 'Geçersiz biçimde panel giriş kodu denendi.', details: { ipHash: digest(request.socket.remoteAddress || '').slice(0, 16) } });
+          throw httpError(401, 'Giriş kodu geçersiz, kullanılmış veya süresi dolmuş.');
+        }
+        let codeRecord;
+        for (const guild of client.guilds.cache.values()) {
+          codeRecord = store.consumeRecord(guild.id, 'panel_login_code', digest(supplied));
+          if (codeRecord) break;
+        }
+        if (!codeRecord) {
+          if (sessionStoreGuildId) store.addLog(sessionStoreGuildId, { type: 'panel.login_failed', message: 'Geçersiz, kullanılmış veya süresi dolmuş panel kodu denendi.', details: { ipHash: digest(request.socket.remoteAddress || '').slice(0, 16) } });
+          throw httpError(401, 'Giriş kodu geçersiz, kullanılmış veya süresi dolmuş.');
+        }
+        const guild = client.guilds.cache.get(codeRecord.guildId);
+        const member = await guild?.members.fetch({ user: codeRecord.userId, force: true }).catch(() => null);
+        const settings = guild ? store.getSettings(guild.id) : null;
+        const allowed = member && (member.permissions.has(manageGuild) || (settings.panelAccessRoleIds || []).some(id => member.roles.cache.has(id)));
+        if (!allowed) {
+          store.addLog(codeRecord.guildId, { type: 'panel.login_failed', actorId: codeRecord.userId, message: 'Panel giriş kodu rol doğrulamasından geçemedi.', details: { actorName: codeRecord.userName } });
+          throw httpError(401, 'Giriş kodu geçersiz, kullanılmış veya süresi dolmuş.');
+        }
+        const rawSession = random(), id = digest(rawSession);
+        const seconds = Math.min(8, Math.max(1, Number(settings.panelSessionHours) || 8)) * 3600;
+        const user = member.user;
+        const created = { user: { id: user.id, username: user.username, name: user.globalName || user.username, avatar: user.avatar }, authType: 'code', guildId: guild.id, csrf: random(), expires: Date.now() + seconds * 1000, createdAt: Date.now(), seenGuilds: new Set() };
+        sessions.set(id, created); saveSession(id, created);
+        store.addLog(guild.id, { type: 'panel.login', actorId: user.id, message: `${created.user.name} tek kullanımlık kodla panele giriş yaptı.`, details: { actorName: created.user.name, method: 'one_time_code' } });
+        response.setHeader('Set-Cookie', cookie('pitstop_session', rawSession, seconds));
+        json(response, 200, { ok: true }); return;
+      }
 
       if (url.pathname === '/auth/login' && request.method === 'GET') {
         if (!configured) throw httpError(503, 'Panel girişi için Discord OAuth2 bilgileri henüz ayarlanmadı.');
@@ -233,13 +300,13 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         const user = await discordApi('/users/@me', token.access_token);
         clean();
         if (sessions.size >= 1000) throw httpError(503, 'Oturum kapasitesi dolu. Daha sonra deneyin.');
-        const id = random();
+        const rawSession = random(), id = digest(rawSession);
         const accessSeconds = Math.max(60, Number(token.expires_in) || 3600);
-        const seconds = token.refresh_token ? 30 * 24 * 3600 : accessSeconds;
-        const created = { user: { id: user.id, username: user.username, name: user.global_name || user.username, avatar: user.avatar }, accessToken: token.access_token, refreshToken: token.refresh_token || null, csrf: random(), accessExpires: Date.now() + accessSeconds * 1000, expires: Date.now() + seconds * 1000, seenGuilds: new Set() };
+        const seconds = 8 * 3600;
+        const created = { user: { id: user.id, username: user.username, name: user.global_name || user.username, avatar: user.avatar }, authType: 'oauth', accessToken: token.access_token, refreshToken: token.refresh_token || null, csrf: random(), accessExpires: Date.now() + accessSeconds * 1000, expires: Date.now() + seconds * 1000, createdAt: Date.now(), seenGuilds: new Set() };
         sessions.set(id, created);
         saveSession(id, created);
-        response.setHeader('Set-Cookie', [cookie('pitstop_state', '', 0), cookie('pitstop_session', `${id}.${sign(id)}`, seconds)]);
+        response.setHeader('Set-Cookie', [cookie('pitstop_state', '', 0), cookie('pitstop_session', rawSession, seconds)]);
         redirect(response, '/');
         return;
       }
@@ -258,11 +325,15 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         return;
       }
       if (url.pathname === '/api/guilds' && request.method === 'GET') {
+        if (session.authType === 'code') {
+          const guild = client.guilds.cache.get(session.guildId);
+          json(response, 200, guild ? [{ id: guild.id, name: guild.name, icon: guild.icon }] : []); return;
+        }
         const guilds = await discordApi('/users/@me/guilds', await currentAccessToken(session));
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|crew|faqs|boosted-event))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
@@ -329,6 +400,14 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         if (request.method === 'POST') {
           if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 300) throw httpError(400, 'Soru 1–300 karakter arasında olmalı.');
           if (typeof body.answer !== 'string' || !body.answer.trim() || body.answer.length > 1800) throw httpError(400, 'Cevap 1–1800 karakter arasında olmalı.');
+          const normalized = value => value.normalize('NFKC').trim().toLocaleLowerCase('tr-TR').replace(/\s+/gu, ' ');
+          if (store.listRecords(guildId, 'faq', 500).some(item => normalized(item.question || '') === normalized(body.question))) throw httpError(409, 'Aynı soru daha önce eklenmiş. Mevcut kaydı düzenleyin veya farklı bir soru yazın.');
+          if (body.draft === true) {
+            const id = random();
+            store.putRecord(guildId, 'faq', id, { question: body.question.trim(), answer: body.answer.trim(), status: 'draft', createdAt: Date.now(), createdBy: session.user.id, createdByName: session.user.name });
+            store.addLog(guildId, { type: 'faq.draft_created', actorId: session.user.id, message: `${session.user.name} bir SSS taslağı kaydetti.`, details: { actorName: session.user.name, id, question: body.question.trim() } });
+            json(response, 200, store.getRecord(guildId, 'faq', id)); return;
+          }
           try { json(response, 200, await features.publishFaq(guild, member, session.user, body.question, body.answer)); }
           catch (error) { throw httpError(400, error.message); }
           return;
@@ -337,6 +416,11 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           if (typeof body.id !== 'string' || !body.id) throw httpError(400, 'SSS kaydı kimliği gerekli.');
           const item = store.getRecord(guildId, 'faq', body.id);
           if (!item) throw httpError(404, 'SSS kaydı bulunamadı.');
+          if (body.deleteDiscordMessage === true && item.channelId && item.messageId) {
+            const channel = await guild.channels.fetch(item.channelId).catch(() => null);
+            const message = await channel?.messages?.fetch(item.messageId).catch(() => null);
+            if (message) await message.delete().catch(() => { throw httpError(409, 'Discord mesajı silinemedi; bot izinlerini kontrol edin.'); });
+          }
           store.deleteRecord(guildId, 'faq', body.id);
           store.addLog(guildId, { type: 'faq.deleted', actorId: session.user.id, message: `${session.user.name} SSS kaydını sildi.`, details: { actorName: session.user.name, id: body.id, question: item.question } });
           json(response, 200, { ok: true }); return;
@@ -398,6 +482,20 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           json(response, 200, { ok: true }); return;
         }
       }
+      if (resource === 'panel-access') {
+        const records = store.listRecords(sessionStoreGuildId, 'panel_session', 5000)
+          .filter(item => item.expires > Date.now() && (item.guildId === guildId || item.seenGuilds?.includes(guildId)));
+        if (request.method === 'GET') {
+          json(response, 200, { activeCount: records.length, sessions: records.map(item => ({ id: item.id, user: item.user, authType: item.authType || 'oauth', createdAt: item.createdAt, expires: item.expires })) }); return;
+        }
+        if (request.method === 'DELETE') {
+          for (const item of records) deleteSession(item.id);
+          store.addLog(guildId, { type: 'panel.sessions_revoked', actorId: session.user.id, message: `${session.user.name} tüm panel oturumlarını kapattı.`, details: { actorName: session.user.name, count: records.length } });
+          response.setHeader('Set-Cookie', cookie('pitstop_session', '', 0));
+          json(response, 200, { ok: true, revoked: records.length }); return;
+        }
+        throw httpError(405, 'Geçersiz panel erişimi işlemi.');
+      }
       if (resource === 'music' && request.method === 'GET') { json(response, 200, music.getStatus(guildId)); return; }
       if (resource === 'music' && request.method === 'POST') {
         const body = await readJson(request);
@@ -417,6 +515,6 @@ export function createDashboard({ client, store, music, features, crew, boostedE
   });
   server.requestTimeout = 15_000;
   server.headersTimeout = 10_000;
-  server.on('close', () => { clearInterval(cleanup); sessions.clear(); pendingStates.clear(); });
+  server.on('close', () => { clearInterval(cleanup); sessions.clear(); pendingStates.clear(); weatherCache.clear(); });
   return server;
 }

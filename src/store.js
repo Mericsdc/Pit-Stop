@@ -35,6 +35,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   boostedEventChannelId: null,
   faqEnabled: true,
   faqChannelId: null,
+  panelAccessRoleIds: [],
+  panelSessionHours: 8,
+  panelCodeMinutes: 2,
 });
 const BOOLEAN_KEYS = new Set(['leaveEnabled', 'autoRoleEnabled', 'responderEnabled', 'musicEnabled', 'blacklistOnLeave', 'antiSpamEnabled', 'antiPhishingEnabled', 'ticketEnabled', 'defenseEnabled', 'healthEnabled', 'musicRestricted', 'boostedEventEnabled', 'faqEnabled']);
 const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
@@ -79,7 +82,7 @@ function validatePatch(patch) {
       result[key] = value;
     } else if (ID_KEYS.has(key)) {
       result[key] = value === null ? null : snowflake(value, key);
-    } else if (['autoRoleIds', 'musicControllerRoleIds', 'musicControllerUserIds'].includes(key)) {
+    } else if (['autoRoleIds', 'musicControllerRoleIds', 'musicControllerUserIds', 'panelAccessRoleIds'].includes(key)) {
       if (!Array.isArray(value) || value.length > 25) throw new TypeError('En fazla 25 kimlik seçilebilir.');
       result[key] = [...new Set(value.map(id => snowflake(id, key)))];
     } else if (key === 'phishingDomains') {
@@ -88,8 +91,9 @@ function validatePatch(patch) {
         if (typeof domain !== 'string' || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain.trim())) throw new TypeError('Yalnızca alan adı girin; URL veya yol kullanmayın.');
         return domain.trim().toLowerCase();
       }))];
-    } else if (['spamTimeoutMinutes', 'healthHours'].includes(key)) {
-      if (!Number.isInteger(value) || value < 1 || value > (key === 'healthHours' ? 12 : 1440)) throw new TypeError('Süre izin verilen aralıkta olmalı.');
+    } else if (['spamTimeoutMinutes', 'healthHours', 'panelSessionHours', 'panelCodeMinutes'].includes(key)) {
+      const maximum = key === 'healthHours' ? 12 : key === 'panelSessionHours' ? 8 : key === 'panelCodeMinutes' ? 5 : 1440;
+      if (!Number.isInteger(value) || value < 1 || value > maximum) throw new TypeError('Süre izin verilen aralıkta olmalı.');
       result[key] = value;
     } else if (key === 'leaveMessage') {
       result[key] = text(value, 'Ayrılma mesajı', 1000);
@@ -152,6 +156,7 @@ export function createStore(path) {
       data_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
       PRIMARY KEY (guild_id, kind, id)
     );
+    CREATE INDEX IF NOT EXISTS feature_records_kind_updated ON feature_records(kind, updated_at DESC);
   `);
   const getSettingsStatement = database.prepare('SELECT settings_json FROM guild_settings WHERE guild_id = ?');
   const saveSettings = database.prepare(`INSERT INTO guild_settings(guild_id, settings_json, updated_at)
@@ -275,6 +280,22 @@ export function createStore(path) {
       return rows.map(row => ({ ...JSON.parse(row.data_json), id: row.id, guildId: row.guild_id }));
     },
     deleteRecord(guildId, kind, id) { return database.prepare('DELETE FROM feature_records WHERE guild_id=? AND kind=? AND id=?').run(guildId, kind, id).changes > 0; },
+    consumeRecord(guildId, kind, id, now = Date.now()) {
+      snowflake(guildId); logType(kind); text(id, 'Kayıt kimliği', 100);
+      database.exec('BEGIN IMMEDIATE');
+      try {
+        const row = database.prepare('SELECT data_json FROM feature_records WHERE guild_id=? AND kind=? AND id=?').get(guildId, kind, id);
+        if (!row) { database.exec('COMMIT'); return null; }
+        const data = JSON.parse(row.data_json);
+        if (Number(data.expiresAt || 0) <= now || data.usedAt) {
+          database.prepare('DELETE FROM feature_records WHERE guild_id=? AND kind=? AND id=?').run(guildId, kind, id);
+          database.exec('COMMIT'); return null;
+        }
+        database.prepare('DELETE FROM feature_records WHERE guild_id=? AND kind=? AND id=?').run(guildId, kind, id);
+        database.exec('COMMIT');
+        return { ...data, id, guildId };
+      } catch (error) { database.exec('ROLLBACK'); throw error; }
+    },
     close() { database.close(); },
   };
 }

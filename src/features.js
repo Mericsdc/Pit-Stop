@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ActivityType, AuditLogEvent, ButtonBuilder, ButtonStyle, ChannelType, Events, MessageFlags, ModalBuilder, PermissionFlagsBits as P, SlashCommandBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { userLabel } from './audit.js';
@@ -113,7 +113,7 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
     if (!channel?.isTextBased?.()) throw new Error('SSS kanalı bulunamadı veya mesaj gönderilemiyor.');
     const id = randomUUID();
     const message = await channel.send({ content: `❓ **${cleanQuestion}**\n${cleanAnswer}`, allowedMentions: noMentions });
-    store.putRecord(guild.id, 'faq', id, { question: cleanQuestion, answer: cleanAnswer, channelId, messageId: message.id, createdAt: now(), createdBy: user.id, createdByName: userLabel(user) });
+    store.putRecord(guild.id, 'faq', id, { question: cleanQuestion, answer: cleanAnswer, status: 'published', channelId, messageId: message.id, createdAt: now(), createdBy: user.id, createdByName: userLabel(user) });
     record(guild.id, 'faq.published', `${userLabel(user)} bir SSS cevabı yayımladı.`, user.id, { actorName: userLabel(user), faqId: id, channelId, messageId: message.id, question: cleanQuestion, answer: cleanAnswer });
     return store.getRecord(guild.id, 'faq', id);
   }
@@ -189,6 +189,25 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
     }
   }
   const commands = [
+    { data: command('panel-giris', 'Pit-Stop paneli için tek kullanımlık giriş kodu üretir.'), async execute(i) {
+      const s = settings(i.guildId);
+      const roles = i.member?.roles?.cache;
+      const allowed = i.member?.permissions?.has(P.ManageGuild)
+        || (s.panelAccessRoleIds || []).some(roleId => roles?.has(roleId));
+      if (!allowed) {
+        record(i.guildId, 'panel.login_denied', 'Yetkisiz panel giriş kodu isteği reddedildi.', i.user.id, { actorName: userLabel(i.user) });
+        return i.reply({ ...ephemeral, content: 'Panel erişimi için yetkili bir role veya Sunucuyu Yönet iznine ihtiyacınız var.' });
+      }
+      for (const old of store.listRecords(i.guildId, 'panel_login_code', 1000)) {
+        if (old.userId === i.user.id) store.deleteRecord(i.guildId, 'panel_login_code', old.id);
+      }
+      const token = randomBytes(32).toString('base64url');
+      const hash = createHash('sha256').update(token).digest('hex');
+      const expiresAt = now() + Math.min(5, Math.max(1, Number(s.panelCodeMinutes) || 2)) * 60_000;
+      store.putRecord(i.guildId, 'panel_login_code', hash, { userId: i.user.id, userName: userLabel(i.user), expiresAt, createdAt: now() });
+      record(i.guildId, 'panel.code_created', 'Tek kullanımlık panel giriş kodu üretildi.', i.user.id, { actorName: userLabel(i.user), expiresAt });
+      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\`${token}\`\n\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer ve yalnızca bir kez kullanılabilir. Bu kodu kimseyle paylaşmayın.` });
+    } },
     { data: command('hatırlat', 'Zamanı geldiğinde notunu DM veya kanalda hatırlat.').addStringOption(o => o.setName('not').setDescription('2 saat sonra NFS turnuvası var').setRequired(true).setMaxLength(1600)).addStringOption(o => o.setName('hedef').setDescription('Bildirim yeri').addChoices({ name: 'DM', value: 'dm' }, { name: 'Bu kanal', value: 'channel' })), async execute(i) {
       if (store.listRecords(i.guildId, 'reminder').filter(r => r.userId === i.user.id && r.status === 'pending').length >= 20) return i.reply({ ...ephemeral, content: 'En fazla 20 bekleyen hatırlatıcı oluşturabilirsiniz.' });
       let parsed; try { parsed = parseReminder(i.options.getString('not', true), now()); } catch (error) { return i.reply({ ...ephemeral, content: error.message }); }

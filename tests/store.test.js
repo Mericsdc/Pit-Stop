@@ -92,6 +92,16 @@ test('responders normalize Turkish case and optional command prefix', (t) => {
   assert.deepEqual(saved.responses, [{ trigger: 'yarış', reply: 'Başlıyoruz!' }]);
 });
 
+test('one-time records are consumed atomically and cannot be replayed', (t) => {
+  const store = memory(t);
+  store.putRecord(GUILD, 'panel_login_code', 'a'.repeat(64), { userId: USER, expiresAt: Date.now() + 60_000 });
+  const first = store.consumeRecord(GUILD, 'panel_login_code', 'a'.repeat(64));
+  assert.equal(first.userId, USER);
+  assert.equal(store.consumeRecord(GUILD, 'panel_login_code', 'a'.repeat(64)), null);
+  store.putRecord(GUILD, 'panel_login_code', 'b'.repeat(64), { userId: USER, expiresAt: Date.now() - 1 });
+  assert.equal(store.consumeRecord(GUILD, 'panel_login_code', 'b'.repeat(64)), null);
+});
+
 test('logs isolate guilds, filter types and paginate by id without duplicates', (t) => {
   const store = memory(t);
   const first = store.addLog(GUILD, { type: 'member.join', actorId: USER, message: 'Katıldı.', details: { memberId: USER } });

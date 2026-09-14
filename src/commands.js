@@ -188,16 +188,16 @@ export const commands = [
     if (!interaction.appPermissions?.has(DELETE_PERMISSIONS)) {
       return privateReply(interaction, 'Temizleme izni gerekli', 'Pit-Stop için bu kanalda **Mesajları Yönet** ve **Mesaj Geçmişini Oku** izinlerini aç.');
     }
-    const count = interaction.options.getInteger('adet', true);
-    if (!Number.isInteger(count) || count < 1 || count > 100) {
+    const count = interaction.options.getInteger('adet');
+    if (count !== null && (!Number.isInteger(count) || count < 1 || count > 100)) {
       return privateReply(interaction, 'Geçersiz adet', 'İncelenecek mesaj sayısını 1–100 arasında bir tam sayı olarak yaz.');
     }
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    // Fetch current pin state. Bound the scan to messages sent before the command.
-    const recent = await channel.messages.fetch({ limit: count, before: interaction.id, cache: false });
+    // Adet verilmediyse komut mesajından geriye doğru bütün kanal geçmişini tarar.
+    const recent = await channel.messages.fetch({ limit: count ?? 100, before: interaction.id, cache: false });
     const cutoff = Date.now() - TWO_WEEKS_MS + DELETE_AGE_MARGIN_MS;
-    const eligible = recent.filter((message) => message.pinned === false
+    const eligible = recent.filter((message) => (count === null || message.pinned === false)
       && message.system === false && message.deletable === true
       && Number.isFinite(message.createdTimestamp) && message.createdTimestamp > cutoff);
     // Pass explicit messages, never a count, so protected messages cannot be selected again.
@@ -205,24 +205,50 @@ export const commands = [
     let deleted;
     try { deleted = eligible.size > 0 ? await channel.bulkDelete(eligible, true) : null; }
     catch (error) { forgetDeletion(); throw error; }
-    const deletedCount = deleted?.size ?? deleted?.length ?? 0;
+    let deletedCount = deleted?.size ?? deleted?.length ?? 0;
+    let examinedCount = recent.size;
+    if (count === null) {
+      // bulkDelete yalnızca son 14 günü silebilir; eski ve silinebilir iletileri tek tek kaldır.
+      for (const message of recent.values()) if (!eligible.has(message.id) && message.system === false && message.deletable === true) {
+        const forget = rememberCommandDeletion(interaction.client, [message.id], interaction.user);
+        try { await message.delete(); deletedCount += 1; } catch { forget(); /* Discord izinleri veya hız sınırı kayda yansır. */ }
+      }
+      let before = recent.last()?.id;
+      while (before && recent.size === 100) {
+        const batch = await channel.messages.fetch({ limit: 100, before, cache: false });
+        if (!batch.size) break;
+        examinedCount += batch.size;
+        const recentEnough = batch.filter(message => message.system === false && message.deletable === true && Number(message.createdTimestamp) > cutoff);
+        const forget = rememberCommandDeletion(interaction.client, [...recentEnough.keys()], interaction.user);
+        try {
+          const removed = recentEnough.size ? await channel.bulkDelete(recentEnough, true) : null;
+          deletedCount += removed?.size ?? removed?.length ?? 0;
+        } catch (error) { forget(); throw error; }
+        for (const message of batch.values()) if (!recentEnough.has(message.id) && message.system === false && message.deletable === true) {
+          const forget = rememberCommandDeletion(interaction.client, [message.id], interaction.user);
+          try { await message.delete(); deletedCount += 1; } catch { forget(); /* Silinemeyen eski iletiler atlanır. */ }
+        }
+        before = batch.last()?.id;
+        if (batch.size < 100) break;
+      }
+    }
 
     return interaction.editReply({
       embeds: [embed('Pist temizliği', [
-        `**${recent.size}** mesaj incelendi, **${deletedCount}** mesaj silindi.`,
-        'Sabitlenmiş, sistem, silinemeyen ve 14 gün sınırındaki eski mesajlar atlanır.',
+        `**${examinedCount}** mesaj incelendi, **${deletedCount}** mesaj silindi.`,
+        count === null ? 'Kanal geçmişindeki silinebilir mesajlar temizlendi.' : 'Sabitlenmiş, sistem, silinemeyen ve 14 gün sınırındaki eski mesajlar atlanır.',
       ].join('\n\n'))],
     });
   }, (data) => data
     .setDefaultMemberPermissions(DELETE_PERMISSIONS)
     .addIntegerOption((option) => option
-      .setName('adet').setDescription('İncelenecek son mesaj sayısı (1–100); uygun olmayanlar atlanır.')
-      .setRequired(true).setMinValue(1).setMaxValue(100))),
+      .setName('adet').setDescription('İsteğe bağlı: son 1–100 mesaj. Boş bırakılırsa tüm kanal temizlenir.')
+      .setRequired(false).setMinValue(1).setMaxValue(100))),
 ];
 
 const cleanupCommand = commands.find(({ data }) => data.name === 'temizle');
 commands.push(command('clear', 'Son mesajları güvenle temizler; /temizle ile aynı çalışır.', cleanupCommand.execute, (data) => data
   .setDefaultMemberPermissions(DELETE_PERMISSIONS)
   .addIntegerOption((option) => option
-    .setName('adet').setDescription('İncelenecek son mesaj sayısı (1–100); uygun olmayanlar atlanır.')
-    .setRequired(true).setMinValue(1).setMaxValue(100))));
+    .setName('adet').setDescription('İsteğe bağlı: son 1–100 mesaj. Boş bırakılırsa tüm kanal temizlenir.')
+    .setRequired(false).setMinValue(1).setMaxValue(100))));

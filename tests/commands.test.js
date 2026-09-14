@@ -195,13 +195,23 @@ test('cleanup rejects missing, voice, forum, and thread channels', async () => {
 });
 
 test('cleanup rejects invalid counts before fetching or deleting', async () => {
-  for (const adet of [0, 101, -1, 1.5, null]) {
+  for (const adet of [0, 101, -1, 1.5]) {
     const { result, calls } = interaction({ adet });
     await byName.get('temizle').execute(result);
     assert.equal(calls.fetches.length, 0);
     assert.equal(calls.deletes.length, 0);
     assert.match(description(calls.replies[0]), /1–100/u);
   }
+});
+
+test('clear without an amount removes every deletable message in the channel history', async () => {
+  const { result, calls } = interaction({ adet: null });
+  const messages = new Collection([['one', message('one')], ['two', message('two', { pinned: true })]]);
+  result.channel.messages.fetch = async options => { calls.fetches.push(options); return messages; };
+  await byName.get('clear').execute(result);
+  assert.equal(calls.fetches[0].limit, 100);
+  assert.deepEqual([...calls.deletes[0].messages.keys()], ['one', 'two']);
+  assert.match(description(calls.edits[0]), /2.*2/su);
 });
 
 test('cleanup selects explicit recent unpinned deletable messages, preserving protected messages', async () => {

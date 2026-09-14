@@ -97,6 +97,7 @@ cp -R -- "$source_dir/src" "$release_dir/src"
 for runtime_dir in public scripts; do
   [[ ! -d "$source_dir/$runtime_dir" ]] || cp -R -- "$source_dir/$runtime_dir" "$release_dir/$runtime_dir"
 done
+basename -- "$release_dir" > "$release_dir/BUILD_ID"
 if [[ -d "$source_dir/assets" ]]; then cp -R -- "$source_dir/assets" "$release_dir/assets"; fi
 chown -R pit-stop:pit-stop "$release_dir"
 # Install before stopping the running bot; lifecycle scripts run without root privileges.

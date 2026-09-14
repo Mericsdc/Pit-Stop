@@ -42,6 +42,11 @@ export function readConfig(env = process.env) {
       userKey: env.NRZ_USER_KEY?.trim() || '',
       personaKey: env.NRZ_PERSONA_KEY?.trim() || '',
     },
+    weather: {
+      city: env.DEFAULT_WEATHER_CITY?.trim() || 'İstanbul',
+      latitude: Number(env.DEFAULT_WEATHER_LATITUDE || 41.0082),
+      longitude: Number(env.DEFAULT_WEATHER_LONGITUDE || 28.9784),
+    },
   };
 }
 
