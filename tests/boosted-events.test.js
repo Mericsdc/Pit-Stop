@@ -23,8 +23,8 @@ test('Boosted Event data and leaderboard class are normalized defensively', () =
 
 test('monitor announces a new event once and persists its latest status', async t => {
   const store = createStore(':memory:'); t.after(() => store.close());
-  const sent = [];
-  const client = { guilds: { cache: new Map([[GUILD, { emojis: { cache: new Map([['d', { id: '444', name: 'Dclass', animated: false }], ['a', { id: '111', name: 'Aclass', animated: false }]]) }, channels: { fetch: async id => id === CHANNEL ? { isTextBased: () => true, send: async payload => { sent.push(payload); } } : null } }]]) } };
+  const sent = [], reactions = [];
+  const client = { guilds: { cache: new Map([[GUILD, { emojis: { cache: new Map([['d', { id: '444', name: 'Dclass', animated: false }], ['a', { id: '111', name: 'Aclass', animated: false }]]) }, channels: { fetch: async id => id === CHANNEL ? { isTextBased: () => true, send: async payload => { sent.push(payload); return { react: async emoji => { reactions.push(emoji); } }; } } : null } }]]) } };
   let raceId = '377';
   const fetcher = async (url) => String(url).includes('gateway.php')
     ? Response.json([{ id: raceId, name: raceId === '377' ? 'OUTLAWS (TEAM ESCAPE)' : 'ROSEWOOD', eventModeId: '24', isBoosted: '1' }])
@@ -36,12 +36,14 @@ test('monitor announces a new event once and persists its latest status', async 
   assert.equal(sent.length, 1);
   assert.match(sent[0].content, /OUTLAWS/);
   assert.match(sent[0].content, /Class D/);
-  assert.match(sent[0].content, /<:Dclass:444> Class D/);
+  assert.doesNotMatch(sent[0].content, /<:Dclass:444>/);
+  assert.deepEqual(reactions, ['444']);
   assert.match(sent[0].content, /https:\/\/nightriderz\.world\/leaderboard\/377/);
   assert.match(sent[0].content, /\*\*Tür:\*\* Team Escape\n\*\*Bitiş:\*\* <t:1800:t> \(<t:1800:R>\)/);
   assert.equal(store.getRecord(GUILD, 'boosted_event', 'current').event.endsAt, 1_800_000);
   raceId = '378';
   await monitor.refresh();
   assert.equal(sent.length, 2);
+  assert.deepEqual(reactions, ['444', '111']);
   assert.equal(store.getRecord(GUILD, 'boosted_event', 'current').event.className, 'Class A');
 });

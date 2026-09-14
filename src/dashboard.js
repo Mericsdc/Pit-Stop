@@ -196,7 +196,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; media-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     if (secure) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(request.url, base);
@@ -209,7 +209,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       }
       if (url.pathname === '/api/status' && request.method === 'GET') {
         const publicSettings = sessionStoreGuildId ? store.getSettings(sessionStoreGuildId) : {};
-        json(response, 200, { name: 'Pit-Stop', ready: client.isReady(), loginConfigured: configured, version: packageInfo.version, build: buildInfo || basename(process.cwd()), codeLogin: true, appearance: { panelLogoUrl: publicSettings.panelLogoUrl, panelBannerUrl: publicSettings.panelBannerUrl } });
+        json(response, 200, { name: 'Pit-Stop', ready: client.isReady(), loginConfigured: configured, version: packageInfo.version, build: buildInfo || basename(process.cwd()), codeLogin: true, appearance: { panelLogoUrl: publicSettings.panelLogoUrl, panelBannerUrl: publicSettings.panelBannerUrl, panelLoginBackgroundUrl: publicSettings.panelLoginBackgroundUrl } });
         return;
       }
       const session = getSession(request);
@@ -359,7 +359,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           boostedEvent: boostedEvents?.getStatus(guildId) || null,
           protection: features?.protectionStatus(), presenceEnabled: config.presenceEnabled || false,
           viewerPermissions: { manageChannels: member.permissions.has(PermissionFlagsBits.ManageChannels) },
-          bot: { ready: client.isReady(), ping: Math.max(0, Math.round(client.ws.ping)), uptime: Math.round(process.uptime()), permissions: Object.fromEntries(Object.entries({ manageRoles: PermissionFlagsBits.ManageRoles, manageMessages: PermissionFlagsBits.ManageMessages, connect: PermissionFlagsBits.Connect, speak: PermissionFlagsBits.Speak, moderateMembers: PermissionFlagsBits.ModerateMembers, viewAuditLog: PermissionFlagsBits.ViewAuditLog, manageChannels: PermissionFlagsBits.ManageChannels, createPrivateThreads: PermissionFlagsBits.CreatePrivateThreads, manageThreads: PermissionFlagsBits.ManageThreads }).map(([key, flag]) => [key, botPermissions?.has(flag) || false])) },
+          bot: { ready: client.isReady(), ping: Math.max(0, Math.round(client.ws.ping)), uptime: Math.round(process.uptime()), permissions: Object.fromEntries(Object.entries({ manageRoles: PermissionFlagsBits.ManageRoles, manageMessages: PermissionFlagsBits.ManageMessages, addReactions: PermissionFlagsBits.AddReactions, connect: PermissionFlagsBits.Connect, speak: PermissionFlagsBits.Speak, moderateMembers: PermissionFlagsBits.ModerateMembers, viewAuditLog: PermissionFlagsBits.ViewAuditLog, manageChannels: PermissionFlagsBits.ManageChannels, createPrivateThreads: PermissionFlagsBits.CreatePrivateThreads, manageThreads: PermissionFlagsBits.ManageThreads }).map(([key, flag]) => [key, botPermissions?.has(flag) || false])) },
         });
         return;
       }

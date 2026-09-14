@@ -74,14 +74,16 @@ for (const [label, patch] of [
   });
 }
 
-test('panel appearance accepts HTTPS image URLs and can reset them', (t) => {
+test('panel appearance accepts HTTPS image and video URLs and can reset them', (t) => {
   const store = memory(t);
-  const saved = store.updateSettings(GUILD, { panelLogoUrl: 'https://cdn.example/logo.png', panelBannerUrl: 'https://cdn.example/banner.webp' });
+  const saved = store.updateSettings(GUILD, { panelLogoUrl: 'https://cdn.example/logo.png', panelBannerUrl: 'https://cdn.example/banner.webp', panelLoginBackgroundUrl: 'https://cdn.example/garage.webm' });
   assert.equal(saved.panelLogoUrl, 'https://cdn.example/logo.png');
   assert.equal(saved.panelBannerUrl, 'https://cdn.example/banner.webp');
-  const reset = store.updateSettings(GUILD, { panelLogoUrl: null, panelBannerUrl: null });
+  assert.equal(saved.panelLoginBackgroundUrl, 'https://cdn.example/garage.webm');
+  const reset = store.updateSettings(GUILD, { panelLogoUrl: null, panelBannerUrl: null, panelLoginBackgroundUrl: null });
   assert.equal(reset.panelLogoUrl, null);
   assert.equal(reset.panelBannerUrl, null);
+  assert.equal(reset.panelLoginBackgroundUrl, null);
 });
 
 test('dependent settings must have a channel or role and failed transactions recover', (t) => {

@@ -2,7 +2,7 @@ import { staticHosting, livePanelUrl } from './site-config.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSortDirection: 'desc', navOrder: [], panelAccess: null, faqRecords: [], editingFaqId: null };
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], editingFaqId: null };
 let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', community: 'Üyeler ve roller', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
 const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music'], automation: ['community', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
@@ -50,6 +50,17 @@ function applyAppearance(settings = state.guild?.settings) {
   for (const image of [$('#panel-logo'), $('#login-logo')].filter(Boolean)) { image.onerror = () => { image.onerror = null; image.src = '/assets/logo.webp'; }; image.src = logo; }
   const banner = settings?.panelBannerUrl || '/assets/banner.webp';
   if ($('#hero-banner')) { $('#hero-banner').onerror = () => { $('#hero-banner').onerror = null; $('#hero-banner').src = '/assets/banner.webp'; }; $('#hero-banner').src = banner; }
+  const background = settings?.panelLoginBackgroundUrl || '';
+  const backgroundImage = $('#login-background-image'), backgroundVideo = $('#login-background-video');
+  if (backgroundImage && backgroundVideo) {
+    backgroundImage.hidden = true; backgroundVideo.hidden = true; backgroundVideo.pause(); backgroundVideo.removeAttribute('src');
+    if (background) {
+      let isVideo = false;
+      try { isVideo = /\.(?:mp4|webm|ogg)$/iu.test(new URL(background).pathname); } catch { /* Server-side validation reports invalid URLs. */ }
+      if (isVideo) { backgroundVideo.src = background; backgroundVideo.hidden = false; void backgroundVideo.play().catch(() => { backgroundVideo.hidden = true; }); }
+      else { backgroundImage.onerror = () => { backgroundImage.hidden = true; }; backgroundImage.src = background; backgroundImage.hidden = false; }
+    }
+  }
 }
 function setMenuOpen(open) { document.body.classList.toggle('menu-open', open); const toggleButton = $('#menu-toggle'); if (toggleButton) { toggleButton.setAttribute('aria-expanded', String(open)); toggleButton.setAttribute('aria-label', open ? 'Menüyü kapat' : 'Menüyü aç'); } if ($('#menu-backdrop')) $('#menu-backdrop').hidden = !open; }
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -151,7 +162,18 @@ function logTable(logs) {
 function renderLogs() { return `<section class="card"><div class="log-tools"><label for="log-search" class="sr-only">Kayıtlarda ara</label><input id="log-search" type="search" placeholder="Kullanıcı veya olay ara"><label for="log-type" class="sr-only">Olay türü</label><select id="log-type"><option value="">Tüm olaylar</option>${Object.entries(logTypeNames).map(([value, label]) => `<option value="${escape(value)}">${label}</option>`).join('')}</select><button class="button subtle" id="reload-logs">↻ Kayıtları yenile</button><span class="muted tiny">Son 30 gün · En fazla 10.000 kayıt</span></div><div id="log-table" class="muted">Kayıtlar yükleniyor…</div><div class="form-actions"><button id="more-logs" class="button subtle" hidden>Daha eski kayıtlar</button></div></section>`; }
 function renderBoosted() {
   const s = state.guild.settings, event = state.guild.boostedEvent || {};
-  return `<form id="boosted-form" class="card form-stack"><div class="card-header"><div><h3>Boosted Event takibi</h3><p class="muted tiny">NightRiderz canlı haritası saat ve yarım saat güncellemelerinden sonra kontrol edilir.</p></div>${badge(s.boostedEventEnabled)}</div>${toggle('boosted-event-enabled', 'Etkinlik duyuruları', 'Yeni yarış bulunduğunda seçilen kanala bağlantı, sınıf ve bitiş saatiyle gönder.', s.boostedEventEnabled)}<label>Bildirim kanalı<select id="boosted-event-channel">${channelOptions(s.boostedEventChannelId || event.channelId)}</select></label><p class="muted tiny">Son kontrol: ${date(event.checkedAt)}${event.event ? ` · <a href="${escape(event.event.url || `https://nightriderz.world/leaderboard/${event.event.id}`)}" target="_blank" rel="noopener noreferrer">${escape(event.event.name)}</a> · ${escape(event.event.className)}${event.event.endsAt ? ` · Bitiş: ${date(event.event.endsAt)}` : ''}` : ''}</p>${event.error ? `<p class="hint">${escape(event.error)}</p>` : ''}<div class="form-actions"><button type="button" class="button subtle" id="refresh-boosted-event">Şimdi kontrol et ve bildir</button><button class="button primary">Ayarları kaydet</button></div></form>`;
+  const progress = event.event?.endsAt ? `<section class="boosted-progress" data-ends-at="${Number(event.event.endsAt)}"><div class="boosted-progress-head"><strong>30 dakikalık yarış süresi</strong><span data-boosted-progress-text>Hesaplanıyor…</span></div><div class="boosted-progress-track" role="progressbar" aria-label="Boosted Event kalan süre" aria-valuemin="0" aria-valuemax="100"><span data-boosted-progress-fill></span></div></section>` : '';
+  return `<form id="boosted-form" class="card form-stack"><div class="card-header"><div><h3>Boosted Event takibi</h3><p class="muted tiny">NightRiderz canlı haritası saat ve yarım saat güncellemelerinden sonra kontrol edilir.</p></div>${badge(s.boostedEventEnabled)}</div>${toggle('boosted-event-enabled', 'Etkinlik duyuruları', 'Yeni yarış bulunduğunda seçilen kanala bağlantı, sınıf ve bitiş saatiyle gönder; sınıf simgesini mesaja tepki olarak ekler.', s.boostedEventEnabled)}<label>Bildirim kanalı<select id="boosted-event-channel">${channelOptions(s.boostedEventChannelId || event.channelId)}</select></label>${progress}<p class="muted tiny">Son kontrol: ${date(event.checkedAt)}${event.event ? ` · <a href="${escape(event.event.url || `https://nightriderz.world/leaderboard/${event.event.id}`)}" target="_blank" rel="noopener noreferrer">${escape(event.event.name)}</a> · ${escape(event.event.className)}${event.event.endsAt ? ` · Bitiş: ${date(event.event.endsAt)}` : ''}` : ''}</p>${event.error ? `<p class="hint">${escape(event.error)}</p>` : ''}<div class="form-actions"><button type="button" class="button subtle" id="refresh-boosted-event">Şimdi kontrol et ve bildir</button><button class="button primary">Ayarları kaydet</button></div></form>`;
+}
+function updateBoostedProgress() {
+  const progress = $('.boosted-progress');
+  if (!progress) return;
+  const total = 30 * 60_000, remaining = Math.max(0, Number(progress.dataset.endsAt) - Date.now());
+  const percent = Math.max(0, Math.min(100, ((total - remaining) / total) * 100));
+  const fill = progress.querySelector('[data-boosted-progress-fill]'), label = progress.querySelector('[data-boosted-progress-text]');
+  if (fill) fill.style.width = `${percent.toFixed(2)}%`;
+  if (label) label.textContent = remaining ? `%${Math.round(percent)} · ${Math.ceil(remaining / 60_000)} dakika sonra değişecek` : '%100 · Yeni yarış kontrol ediliyor';
+  progress.querySelector('[role="progressbar"]')?.setAttribute('aria-valuenow', String(Math.round(percent)));
 }
 
 function settingsLinks() {
@@ -167,8 +189,8 @@ function renderSettingsBase() {
   return `<div class="grid-2 settings-grid">
     <section class="card form-stack"><div><h3>Yönetilen Discord sunucusu</h3><p class="muted tiny">Panelde ayarlarını değiştirmek istediğiniz sunucuyu seçin.</p></div><label for="guild-select">Sunucu<select id="guild-select">${guildOptions}</select></label></section>
     <form id="settings-form" class="card form-stack"><div><h3>Discord kayıt kanalı</h3><p class="muted tiny">Panel kayıtlarına ek olarak Discord’a olay özeti gönderir.</p></div><label for="log-channel">Kayıt kanalı<select id="log-channel">${channelOptions(s.logChannelId)}</select></label><div class="form-actions"><button class="button primary">Kayıt kanalını kaydet</button></div></form>
-    <form id="appearance-form" class="card form-stack"><div><h3>Panel logosu ve banner</h3><p class="muted tiny">Güvenli bir HTTPS görsel adresi kullanın. Alanları boş bırakarak varsayılan görsellere dönebilirsiniz.</p></div><label for="panel-logo-url">Logo görseli adresi<input id="panel-logo-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelLogoUrl || '')}"></label><label for="panel-banner-url">Genel bakış banner adresi<input id="panel-banner-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelBannerUrl || '')}"></label><div class="form-actions"><button type="button" id="reset-appearance" class="button subtle">Varsayılana dön</button><button class="button primary">Görselleri kaydet</button></div></form>
-    <section class="card"><h3>Bot izinlerinin durumu</h3>${[['manageRoles','Rolleri Yönet'],['manageMessages','Mesajları Yönet'],['connect','Bağlan'],['speak','Konuş'],['moderateMembers','Zaman Aşımı'],['viewAuditLog','Denetim Kaydı'],['manageChannels','Kanalları Yönet'],['createPrivateThreads','Özel İleti Dizisi'],['manageThreads','İleti Dizilerini Yönet']].map(([key,label]) => `<div class="permission"><span>${label}</span>${badge(perms[key], 'Var', 'Eksik')}</div>`).join('')}</section>
+    <form id="appearance-form" class="card form-stack"><div><h3>Panel görselleri ve giriş arka planı</h3><p class="muted tiny">HTTPS adresi kullanın. Giriş arka planı resim, GIF, MP4, WebM veya OGG olabilir; boş alan siyah arka plana döner.</p></div><label for="panel-logo-url">Logo görseli adresi<input id="panel-logo-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelLogoUrl || '')}"></label><label for="panel-banner-url">Genel bakış banner adresi<input id="panel-banner-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelBannerUrl || '')}"></label><label for="panel-login-background-url">Giriş ekranı arka plan adresi<input id="panel-login-background-url" type="url" maxlength="1000" placeholder="https://.../garaj.webp veya garaj.mp4" value="${escape(s.panelLoginBackgroundUrl || '')}"></label><div class="form-actions"><button type="button" id="reset-appearance" class="button subtle">Varsayılana dön</button><button class="button primary">Görselleri kaydet</button></div></form>
+    <section class="card"><h3>Bot izinlerinin durumu</h3>${[['manageRoles','Rolleri Yönet'],['manageMessages','Mesajları Yönet'],['addReactions','Tepki Ekle'],['connect','Bağlan'],['speak','Konuş'],['moderateMembers','Zaman Aşımı'],['viewAuditLog','Denetim Kaydı'],['manageChannels','Kanalları Yönet'],['createPrivateThreads','Özel İleti Dizisi'],['manageThreads','İleti Dizilerini Yönet']].map(([key,label]) => `<div class="permission"><span>${label}</span>${badge(perms[key], 'Var', 'Eksik')}</div>`).join('')}</section>
     <section class="card"><h3>Genel modül durumları</h3><div class="module-status-grid">${active.map(([name,on]) => `<div><span>${name}</span>${badge(on)}</div>`).join('')}</div></section>
     <section class="card"><h3>Sistem ve bağlantı bilgileri</h3><div class="permission"><span>Discord</span>${badge(state.guild.bot.ready,'Bağlı','Bağlantı yok')}</div><div class="permission"><span>Veritabanı</span>${badge(true,'Bağlı','Hata')}</div><div class="permission"><span>Müzik servisi</span>${badge(state.guild.music.available,'Hazır','Bekliyor')}</div><div class="permission"><span>Gecikme</span><strong>${number(state.guild.bot.ping)} ms</strong></div><div class="permission"><span>Çalışma süresi</span><strong>${uptime(state.guild.bot.uptime)}</strong></div></section>
     ${state.me.installationOwner ? `<form id="install-form" class="card wide form-stack"><h3>İzin verilen kurulum sunucuları</h3><label>Sunucu kimlikleri<textarea id="allowed-guilds" rows="4" required></textarea></label><p class="muted tiny">Ana sunucu listede kalmalıdır. Bu listeyi yalnızca bot sahibi düzenleyebilir.</p><div class="form-actions"><button class="button primary">Kurulum izinlerini kaydet</button></div></form>` : ''}
@@ -206,25 +228,34 @@ function crewBodyLegacy(crew) {
   return `<div class="stats"><div class="card stat"><div class="stat-label">Ekibin toplam REP'i</div><div class="stat-value">${number(crew.crewRep)}</div><div class="stat-foot">Güncel toplam</div></div><div class="card stat"><div class="stat-label">Bugünkü REP</div><div class="stat-value">${signed(crew.dailyCrewRep)}</div><div class="stat-foot">Dünkü son kayda göre</div></div><div class="card stat"><div class="stat-label">Bugünkü etkinlik</div><div class="stat-value">${signed(crew.dailyEvents)}</div><div class="stat-foot">Tamamlanan etkinlik farkı</div></div><div class="card stat"><div class="stat-label">Takip edilen üye</div><div class="stat-value">${number(crew.members.length)}</div><div class="stat-foot">Ekip kadrosu</div></div></div>${crew.error || crew.rosterError ? `<div class="notice error">${escape(crew.error || crew.rosterError)}</div>` : ''}<section class="card"><div class="card-header"><div><h3>Üye karşılaştırması</h3><p class="muted tiny">Son yenileme: ${date(crew.updatedAt)} · ${comparisonText}</p></div><a class="button subtle" href="${escape(crew.sourceUrl)}" target="_blank" rel="noopener noreferrer">Kaynağı aç ↗</a></div><div class="crew-legend" aria-label="REP karşılaştırma açıklaması"><span class="trend up">↑ Yeşil: düne göre REP kazandı</span><span class="trend down">↓ Kırmızı: bugün REP kazanmadı</span></div><div class="table-wrap"><table><thead><tr><th>ÜYE</th><th>EKİP REP'İ</th><th><button type="button" class="table-sort" data-crew-sort aria-label="Bugünkü REP değerine göre ${direction === 'asc' ? 'büyükten küçüğe' : 'küçükten büyüğe'} sırala">BUGÜNKÜ REP <span aria-hidden="true">${sortArrow}</span></button></th><th>SON GİRİŞ</th><th>TAMAMLANAN ETKİNLİKLER</th><th>BUGÜNKÜ ETKİNLİK</th><th>SÜRÜCÜ PUANI</th><th>BUGÜNKÜ PUAN</th></tr></thead><tbody>${members.map(member => `<tr><td><strong>${escape(member.name)}</strong><small class="muted">Seviye ${number(member.level)}</small></td><td>${number(member.crewRep)}</td><td>${crewTrend(member, crew.comparisonAvailable)}</td><td class="time">${escape(member.lastLogin || '—')}</td><td>${number(member.eventsCompleted)}</td><td>${signed(member.dailyEvents)}</td><td>${number(member.driverScore)}</td><td>${signed(member.dailyDriverScore)}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny crew-source">${crew.exactRoster ? 'Üye listesi NightRiderz Üyeler bölümünden canlı alındı.' : 'Üye listesi son doğrulanan ekip kadrosundan, profil alanları NightRiderz API üzerinden canlı alındı.'}${crew.profileFailures ? ` ${number(crew.profileFailures)} profil son başarılı değeri korudu.` : ''}</p></section>`;
 }
 function instantTrend(member) {
-  if (!member.repAvailable) return '<span class="trend neutral" title="Canlı ekip REP bağlantısı kapalı">—</span>';
-  const value = Number(member.crewRepChange || 0);
-  if (value > 0) return `<span class="trend up" title="Son yenilemeden beri REP kazandı">↑ ${signed(value)}</span>`;
-  if (value < 0) return `<span class="trend down" title="Son yenilemeden beri REP azaldı">↓ ${signed(value)}</span>`;
-  return '<span class="trend neutral" title="Son yenilemeden beri değişmedi">• 0</span>';
+  const value = Number(member.last24hCrewRep || 0);
+  if (value > 0) return `<span class="trend up" title="Son 24 saatte REP kazandı">↑ ${signed(value)}</span>`;
+  return `<span class="trend down" title="Son 24 saatte REP kazanmadı">↓ ${signed(value)}</span>`;
+}
+function crewSortButton(key, label) {
+  const active = state.crewSort.key === key, arrow = active ? (state.crewSort.direction === 'asc' ? '↑' : '↓') : '↕';
+  return `<button type="button" class="table-sort" data-crew-sort="${key}" aria-label="${escape(label)} sütununa göre sırala">${escape(label)} <span aria-hidden="true">${arrow}</span></button>`;
+}
+function crewSortValue(member, key) {
+  if (key === 'name') return String(member.name || '').toLocaleLowerCase('tr-TR');
+  if (key === 'lastLogin') {
+    const parsed = Date.parse(String(member.lastLogin || '').replace(' ', 'T'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return Number(member[key] || 0);
 }
 function crewBody(crew) {
   if (!crew?.members?.length) return `<div class="empty"><span class="empty-symbol">◇</span>${escape(crew?.error || 'Ekip verileri hazırlanıyor.')}</div>`;
-  const direction = state.crewSortDirection;
+  const { key, direction } = state.crewSort;
   const members = [...crew.members].sort((left, right) => {
-    const delta = Number(left.dailyCrewRep || 0) - Number(right.dailyCrewRep || 0);
+    const leftValue = crewSortValue(left, key), rightValue = crewSortValue(right, key);
+    const delta = typeof leftValue === 'string' ? leftValue.localeCompare(rightValue, 'tr') : leftValue - rightValue;
     if (delta) return direction === 'asc' ? delta : -delta;
-    return Number(right.crewRep || 0) - Number(left.crewRep || 0);
+    return String(left.name).localeCompare(String(right.name), 'tr');
   });
-  const sortArrow = direction === 'asc' ? '↑' : '↓';
   const comparisonText = crew.comparisonAvailable ? (crew.referenceDate === crew.date ? 'Bugünün ilk kaydıyla karşılaştırılıyor.' : `${escape(crew.referenceDate)} tarihindeki son kayıtla karşılaştırılıyor.`) : 'İlk karşılaştırma kaydı hazırlanıyor.';
-  const repAvailable = Boolean(crew.exactRoster);
   const nextRefreshAt = crew.nextRefreshAt || (Number(crew.updatedAt || 0) + 3 * 60 * 60_000);
-  return `<div class="stats"><div class="card stat"><div class="stat-label">${repAvailable ? 'Ekibin toplam REP’i' : 'Son kayıtlı ekip REP’i'}</div><div class="stat-value">${number(crew.crewRep)}</div><div class="stat-foot">${repAvailable ? 'NightRiderz Üyeler verisi' : 'Canlı REP bağlantısı kapalı'}</div></div><div class="card stat"><div class="stat-label">Anlık REP</div><div class="stat-value">${repAvailable ? signed(crew.instantCrewRep) : '—'}</div><div class="stat-foot">Son yenilemeden beri</div></div><div class="card stat"><div class="stat-label">Bugünkü REP</div><div class="stat-value">${repAvailable ? signed(crew.dailyCrewRep) : '—'}</div><div class="stat-foot">Günün referans kaydına göre</div></div><div class="card stat"><div class="stat-label">Bugünkü etkinlik</div><div class="stat-value">${signed(crew.dailyEvents)}</div><div class="stat-foot">Tamamlanan etkinlik farkı</div></div><div class="card stat"><div class="stat-label">Takip edilen üye</div><div class="stat-value">${number(crew.members.length)}</div><div class="stat-foot">Ekip kadrosu</div></div></div>${crew.error || crew.rosterError ? `<div class="notice error">${escape(crew.error || crew.rosterError)}</div>` : ''}${!repAvailable ? '<div class="hint">Üye profilleri yenileniyor. NightRiderz ekip REP servisi oturum bağlantısı olmadan REP alanını paylaşmadığı için anlık ve günlük REP sütunlarında çizgi gösterilir.</div>' : ''}<section class="card"><div class="card-header"><div><h3>Üye karşılaştırması</h3><p class="muted tiny">Son yenileme: ${date(crew.updatedAt)} · Sonraki otomatik yenileme: ${date(nextRefreshAt)} · ${comparisonText}</p></div><a class="button subtle" href="${escape(crew.sourceUrl)}" target="_blank" rel="noopener noreferrer">Kaynağı aç ↗</a></div><div class="crew-legend"><span class="trend up">↑ Yeşil: REP kazandı</span><span class="trend down">↓ Kırmızı: REP kazanmadı veya azaldı</span><span class="trend neutral">• Anlık: son yenilemeye göre</span></div><div class="table-wrap"><table><thead><tr><th>ÜYE</th><th>EKİP REP'İ</th><th>ANLIK REP</th><th><button type="button" class="table-sort" data-crew-sort aria-label="Bugünkü REP değerine göre ${direction === 'asc' ? 'büyükten küçüğe' : 'küçükten büyüğe'} sırala">BUGÜNKÜ REP <span aria-hidden="true">${sortArrow}</span></button></th><th>SON GİRİŞ</th><th>TAMAMLANAN ETKİNLİKLER</th><th>BUGÜNKÜ ETKİNLİK</th><th>SÜRÜCÜ PUANI</th><th>BUGÜNKÜ PUAN</th></tr></thead><tbody>${members.map(member => `<tr><td><strong>${escape(member.name)}</strong><small class="muted">Seviye ${number(member.level)}</small></td><td>${number(member.crewRep)}</td><td>${instantTrend({ ...member, repAvailable })}</td><td>${repAvailable ? crewTrend(member, crew.comparisonAvailable) : '<span class="trend neutral">—</span>'}</td><td class="time">${escape(member.lastLogin || '—')}</td><td>${number(member.eventsCompleted)}</td><td>${signed(member.dailyEvents)}</td><td>${number(member.driverScore)}</td><td>${signed(member.dailyDriverScore)}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny crew-source">${repAvailable ? 'Üye listesi ve REP değerleri NightRiderz Üyeler bölümünden canlı alındı.' : 'Üye listesi son doğrulanan ekip kadrosundan, profil alanları NightRiderz API üzerinden yenileniyor.'}${crew.profileFailures ? ` ${number(crew.profileFailures)} profil son başarılı değeri korudu.` : ''}</p></section>`;
+  return `<div class="stats crew-stats"><div class="card stat"><div class="stat-label">Toplam REP</div><div class="stat-value">${number(crew.crewRep)}</div><div class="stat-foot">Son kayıtlı ekip toplamı</div></div><div class="card stat"><div class="stat-label">Anlık REP</div><div class="stat-value">${signed(crew.last24hCrewRep ?? crew.instantCrewRep)}</div><div class="stat-foot">Son 24 saatte kazanılan</div></div><div class="card stat"><div class="stat-label">Bugünkü REP</div><div class="stat-value">${signed(crew.dailyCrewRep)}</div><div class="stat-foot">Günün ilk kaydına göre</div></div><div class="card stat"><div class="stat-label">Aylık REP</div><div class="stat-value">${signed(crew.monthlyCrewRep)}</div><div class="stat-foot">Ayın ilk kaydına göre</div></div><div class="card stat"><div class="stat-label">Bugünkü etkinlik</div><div class="stat-value">${signed(crew.dailyEvents)}</div><div class="stat-foot">Tamamlanan etkinlik farkı</div></div><div class="card stat"><div class="stat-label">Takip edilen üye</div><div class="stat-value">${number(crew.members.length)}</div><div class="stat-foot">Yöneticiler ve üyeler</div></div></div>${crew.error || crew.rosterError ? `<div class="notice error">${escape(crew.error || crew.rosterError)}</div>` : ''}<section class="card crew-table-card"><div class="card-header"><div><h3>Üye karşılaştırması</h3><p class="muted tiny">Son yenileme: ${date(crew.updatedAt)} · Sonraki otomatik yenileme: ${date(nextRefreshAt)} · ${comparisonText}</p></div><a class="button subtle" href="${escape(crew.sourceUrl)}" target="_blank" rel="noopener noreferrer">Kaynağı aç ↗</a></div><div class="crew-legend"><span class="trend up">↑ Yeşil: REP kazandı</span><span class="trend down">↓ Kırmızı: REP kazanmadı</span><span class="trend neutral">Anlık REP: son 24 saat</span></div><div class="table-wrap"><table><thead><tr><th>${crewSortButton('name','ÜYE')}</th><th>${crewSortButton('crewRep','TOPLAM REP')}</th><th>${crewSortButton('last24hCrewRep','ANLIK REP')}</th><th>${crewSortButton('dailyCrewRep','BUGÜNKÜ REP')}</th><th>${crewSortButton('monthlyCrewRep','AYLIK REP')}</th><th>${crewSortButton('lastLogin','SON GİRİŞ')}</th><th>${crewSortButton('eventsCompleted','TAMAMLANAN ETKİNLİKLER')}</th><th>${crewSortButton('dailyEvents','BUGÜNKÜ ETKİNLİK')}</th><th>${crewSortButton('driverScore','SÜRÜCÜ PUANI')}</th><th>${crewSortButton('dailyDriverScore','BUGÜNKÜ PUAN')}</th></tr></thead><tbody>${members.map(member => `<tr><td><strong>${escape(member.name)}</strong><small class="muted">Seviye ${number(member.level)}</small></td><td>${number(member.crewRep)}</td><td>${instantTrend(member)}</td><td>${crewTrend(member, crew.comparisonAvailable)}</td><td>${signed(member.monthlyCrewRep)}</td><td class="time">${escape(member.lastLogin || '—')}</td><td>${number(member.eventsCompleted)}</td><td>${signed(member.dailyEvents)}</td><td>${number(member.driverScore)}</td><td>${signed(member.dailyDriverScore)}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny crew-source">${crew.exactRoster ? 'Yönetici ve üye listesi ile toplam REP, NightRiderz Üyeler bölümünden; 24 saatlik REP, Crew Activity kayıtlarından alındı.' : 'Son doğrulanan kadro gösteriliyor; NightRiderz okuma oturumu yenilendiğinde canlı değerler otomatik devam eder.'}${crew.profileFailures ? ` ${number(crew.profileFailures)} profil son başarılı değerini korudu.` : ''}</p></section>`;
 }
 function renderCrew() { return `<section class="card"><div class="card-header"><div><h3>NightRiderz Ekibi #1636</h3><p class="muted">Otomatik yenileme üç saatte bir yapılır. İstediğiniz anda elle yenileyebilirsiniz.</p></div><div class="record-actions"><input id="crew-search" type="search" placeholder="Üye ara" aria-label="Ekip üyelerinde ara"><button class="button primary" id="refresh-crew">↻ Şimdi yenile</button></div></div></section><div id="crew-content">${crewBody(state.guild.crew)}</div>`; }
 async function loadCrew(force = false) {
@@ -250,6 +281,7 @@ function render() {
   if (state.view === 'logs') void loadLogs().catch(error => notice(error.message, true));
   if ($('#leave-preview')) updateLeavePreview();
   if (state.view === 'crew') void loadCrew().catch(error => notice(error.message, true));
+  if (state.view === 'boosted') updateBoostedProgress();
 }
 async function loadGuild(guildId) {
   const version = ++guildLoadVersion;
@@ -312,12 +344,12 @@ document.addEventListener('click', async event => {
     }
     if (button.id === 'refresh') { if (state.guild && (!state.dirty || confirm('Kaydedilmemiş değişiklikleri silip yenilemek istiyor musunuz?'))) await loadGuild(state.guild.id); }
     if (button.id === 'reset-overview-height') { localStorage.removeItem(overviewHeightKey); notice('Genel bakış kart boyutu sıfırlandı.'); }
-    if (button.id === 'reset-appearance') { $('#panel-logo-url').value = ''; $('#panel-banner-url').value = ''; state.dirty = true; return; }
+    if (button.id === 'reset-appearance') { $('#panel-logo-url').value = ''; $('#panel-banner-url').value = ''; $('#panel-login-background-url').value = ''; state.dirty = true; return; }
     if (button.id === 'logout') { await api('/auth/logout', { method: 'POST', body: '{}' }); location.reload(); }
     if (button.id === 'add-response') { if ($$('.response-row').length >= 50) throw new Error('En fazla 50 otomatik cevap ekleyebilirsiniz.'); $('#responses').insertAdjacentHTML('beforeend', responseRow()); $('#responses-empty').hidden = true; state.dirty = true; $('#responses').lastElementChild.querySelector('input').focus(); }
     if (button.classList.contains('remove-response')) { button.closest('.response-row').remove(); $('#responses-empty').hidden = Boolean($$('.response-row').length); state.dirty = true; }
     if (button.id === 'reload-logs') await loadLogs();
-    if (button.hasAttribute('data-crew-sort')) { state.crewSortDirection = state.crewSortDirection === 'desc' ? 'asc' : 'desc'; $('#crew-content').innerHTML = crewBody(state.guild.crew); return; }
+    if (button.hasAttribute('data-crew-sort')) { const key = button.dataset.crewSort; state.crewSort = { key, direction: state.crewSort.key === key ? (state.crewSort.direction === 'desc' ? 'asc' : 'desc') : (key === 'name' ? 'asc' : 'desc') }; $('#crew-content').innerHTML = crewBody(state.guild.crew); return; }
     if (button.id === 'refresh-crew') { button.disabled = true; await loadCrew(true); notice('Ekip REP ve profil bilgileri güncellendi.'); }
     if (button.id === 'refresh-boosted-event') { button.disabled = true; state.guild.boostedEvent = await guildApi('boosted-event', { method: 'POST', body: '{}' }); render(); notice(state.guild.boostedEvent.error ? state.guild.boostedEvent.error : 'Boosted Event kontrol edildi ve kanala bildirildi.', Boolean(state.guild.boostedEvent.error)); }
     if (button.id === 'more-logs') await loadLogs(true);
@@ -387,9 +419,9 @@ document.addEventListener('submit', async event => {
     if (form.id === 'music-settings-form') await saveSettings({ musicEnabled: $('#music-enabled').checked, musicVolume: Number($('#default-volume').value), djRoleId: $('#dj-role').value || null });
     if (form.id === 'settings-form') await saveSettings({ logChannelId: $('#log-channel').value || null });
     if (form.id === 'appearance-form') {
-      await saveSettings({ panelLogoUrl: $('#panel-logo-url').value.trim() || null, panelBannerUrl: $('#panel-banner-url').value.trim() || null });
+      await saveSettings({ panelLogoUrl: $('#panel-logo-url').value.trim() || null, panelBannerUrl: $('#panel-banner-url').value.trim() || null, panelLoginBackgroundUrl: $('#panel-login-background-url').value.trim() || null });
       if (state.guild.settings.panelLogoUrl) localStorage.setItem('pitstop-logo-url', state.guild.settings.panelLogoUrl); else localStorage.removeItem('pitstop-logo-url');
-      applyAppearance(state.guild.settings); notice('Panel logosu ve banner güncellendi.');
+      applyAppearance(state.guild.settings); notice('Panel görselleri ve giriş arka planı güncellendi.');
     }
     if (form.id === 'boosted-form') await saveSettings({ boostedEventEnabled: $('#boosted-event-enabled').checked, boostedEventChannelId: $('#boosted-event-channel').value || null });
     if (form.id === 'faq-settings-form') await saveSettings({ faqEnabled: $('#faq-enabled').checked, faqChannelId: $('#faq-channel').value || null });
@@ -466,19 +498,15 @@ async function loadFeatureRecords() {
   }
 }
 function updateLoginClock() {
-  const now = new Date(), seconds = now.getSeconds(), minutes = now.getMinutes() + seconds / 60, hours = (now.getHours() % 12) + minutes / 60;
-  const hour = $('.clock-hand.hour'), minute = $('.clock-hand.minute'), second = $('.clock-hand.second');
-  if (hour) hour.style.transform = `translateX(-50%) rotate(${hours * 30}deg)`;
-  if (minute) minute.style.transform = `translateX(-50%) rotate(${minutes * 6}deg)`;
-  if (second) second.style.transform = `translateX(-50%) rotate(${seconds * 6}deg)`;
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  if ($('#login-datetime')) $('#login-datetime').innerHTML = `<strong>${escape(now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' }))}</strong><span>${escape(now.toLocaleTimeString('tr-TR'))} · ${escape(zone)}</span>`;
+  const now = new Date();
+  if ($('#login-time')) $('#login-time').textContent = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  if ($('#login-datetime')) $('#login-datetime').textContent = now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' }).toLocaleUpperCase('tr-TR');
 }
 async function loadWeather() {
   const weather = $('#weather');
   try {
     const data = await api('/api/weather');
-    weather.textContent = `${data.city} · ${number(data.temperature)}°C · ${data.description} · Hissedilen ${number(data.apparent)}°C`;
+    weather.textContent = `${number(data.temperature)}°C · ${data.description} · Hissedilen ${number(data.apparent)}°C`;
   } catch { weather.textContent = 'İstanbul hava durumu şu anda kullanılamıyor'; }
 }
 let loginClockTimer;
@@ -519,3 +547,4 @@ setInterval(async () => {
     if (state.view === 'music' && !$('#query')?.value && !$('#view-content').contains(document.activeElement)) { const music = await guildApi('music'); state.guild.music = music; render(); }
   } catch { /* User-triggered refresh reports connection errors without interrupting editing. */ }
 }, 15_000);
+setInterval(updateBoostedProgress, 1_000);

@@ -20,13 +20,16 @@ export function nextBoostedRefreshDelay(timestamp = Date.now(), updateDelay = SI
   return timestamp < currentWindowRefresh ? currentWindowRefresh - timestamp : boundary + HALF_HOUR + updateDelay - timestamp;
 }
 
-export function classEmoji(className, guild) {
+function findClassEmoji(className, guild) {
   const match = String(className || '').match(/\bClass\s+([A-Z](?:[12])?)/iu);
   const token = match?.[1]?.toUpperCase();
-  if (!token) return '';
+  if (!token) return null;
   const candidates = [`${token}class`.toLowerCase(), ...(token === 'S' ? ['s1class'] : [])];
-  const emoji = [...(guild?.emojis?.cache?.values?.() || [])]
-    .find(item => candidates.includes(String(item.name || '').toLowerCase()));
+  return [...(guild?.emojis?.cache?.values?.() || [])].find(item => candidates.includes(String(item.name || '').toLowerCase())) || null;
+}
+
+export function classEmoji(className, guild) {
+  const emoji = findClassEmoji(className, guild);
   return emoji ? `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>` : '';
 }
 
@@ -85,7 +88,10 @@ export function createBoostedEventMonitor(client, store, config = {}, { fetcher 
         let event = await enrich(await requestRaces());
         const checkedAt = now();
         const guild = client.guilds.cache.get(guildId);
-        if (event) event = { ...event, url: eventUrl(event.id), classEmoji: classEmoji(event.className, guild), endsAt: checkedAt + nextHalfHourDelay(checkedAt) };
+        if (event) {
+          const emoji = findClassEmoji(event.className, guild);
+          event = { ...event, url: eventUrl(event.id), classEmoji: emoji ? `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>` : '', classEmojiId: emoji?.id || null, endsAt: checkedAt + nextHalfHourDelay(checkedAt) };
+        }
         const settings = store.getSettings(guildId);
         const channelId = settings.boostedEventChannelId || config.boostedEventChannelId;
         const changed = Boolean(event && (!previous.event || previous.event.id !== event.id || previous.event.className !== event.className));
@@ -93,12 +99,14 @@ export function createBoostedEventMonitor(client, store, config = {}, { fetcher 
         if (event && settings.boostedEventEnabled && channelId && (changed || forceAnnouncement)) {
           const channel = await guild?.channels.fetch(channelId).catch(() => null);
           if (!channel?.isTextBased?.()) throw new Error('Boosted Event bildirim kanalı bulunamadı veya yazılabilir değil.');
-          await channel.send({
-            content: `⚡ **BOOSTED EVENT**\n**Etkinlik:** ${event.name}\n${event.url}\n**Sınıf:** ${event.classEmoji ? `${event.classEmoji} ` : ''}${event.className}\n**Tür:** ${event.type}\n**Bitiş:** <t:${Math.floor(event.endsAt / 1000)}:t> (<t:${Math.floor(event.endsAt / 1000)}:R>)`,
+          const sent = await channel.send({
+            content: `⚡ **BOOSTED EVENT**\n**Etkinlik:** ${event.name}\n${event.url}\n**Sınıf:** ${event.className}\n**Tür:** ${event.type}\n**Bitiş:** <t:${Math.floor(event.endsAt / 1000)}:t> (<t:${Math.floor(event.endsAt / 1000)}:R>)`,
             allowedMentions: { parse: [] },
           });
+          let reactionAdded = false;
+          if (event.classEmojiId && sent?.react) reactionAdded = await sent.react(event.classEmojiId).then(() => true).catch(error => { logger('warn', 'boosted_event_reaction_failed', { message: error.message, emojiId: event.classEmojiId }); return false; });
           announcedAt = checkedAt;
-          store.addLog(guildId, { type: 'boosted.announced', actorId: null, message: `${event.name} boosted etkinliği Discord kanalına gönderildi.`, details: { eventId: event.id, eventName: event.name, eventUrl: event.url, className: event.className, classEmoji: event.classEmoji, eventType: event.type, endsAt: event.endsAt, channelId, checkedAt } });
+          store.addLog(guildId, { type: 'boosted.announced', actorId: null, message: `${event.name} boosted etkinliği Discord kanalına gönderildi.`, details: { eventId: event.id, eventName: event.name, eventUrl: event.url, className: event.className, classEmoji: event.classEmoji, classReactionAdded: reactionAdded, eventType: event.type, endsAt: event.endsAt, channelId, checkedAt } });
         }
         const status = { event, checkedAt, announcedAt, channelId: channelId || null, error: null };
         store.putRecord(guildId, 'boosted_event', 'current', status);

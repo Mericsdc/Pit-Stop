@@ -24,15 +24,47 @@ const numeric = value => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 const dayKey = timestamp => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(timestamp));
+const monthKey = timestamp => dayKey(timestamp).slice(0, 7);
 const memberName = item => String(item?.name || item?.personaName || item?.personaname || item?.persona || '').trim();
-const memberRep = item => numeric(item?.crewRep ?? item?.crew_rep ?? item?.recent_rep ?? item?.reputation ?? item?.points ?? item?.rep);
+const memberRep = item => numeric(item?.crewRep ?? item?.crew_rep ?? item?.reputation ?? item?.rep ?? item?.points ?? item?.recent_rep);
 
 export function normalizeRoster(items) {
   if (!Array.isArray(items)) return [];
   const seen = new Set();
-  return items.map(item => ({ name: memberName(item), crewRep: memberRep(item) }))
+  return items.map(item => {
+    const normalized = { name: memberName(item), crewRep: memberRep(item) };
+    if (item?.recent_rep != null || item?.recent_points != null) normalized.recentRep = numeric(item.recent_rep ?? item.recent_points);
+    return normalized;
+  })
     .filter(item => item.name && item.name.length <= 32 && !seen.has(item.name.toLocaleLowerCase('en-US')) && seen.add(item.name.toLocaleLowerCase('en-US')))
     .sort((a, b) => b.crewRep - a.crewRep || a.name.localeCompare(b.name));
+}
+
+function activityTimestamp(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 10_000_000_000 ? value * 1000 : value;
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+  const parsed = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/u.test(raw) ? `${raw.replace(' ', 'T')}Z` : raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function normalizeCrewActivity(items, timestamp = Date.now()) {
+  const today = dayKey(timestamp), month = monthKey(timestamp), rollingStart = timestamp - 24 * 60 * 60_000;
+  const totals = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const name = String(item?.pseudo || item?.name || item?.personaName || '').replace(/<[^>]*>/gu, '').trim();
+    const occurredAt = activityTimestamp(item?.date || item?.createdAt || item?.timestamp);
+    const points = numeric(item?.points ?? item?.rep ?? item?.value);
+    const isRace = Boolean(item?.is_race || item?.racename || String(item?.reason || '').toLowerCase() === 'race');
+    if (!name || !occurredAt || !isRace || points <= 0) continue;
+    const key = name.toLocaleLowerCase('en-US');
+    const value = totals.get(key) || { last24hCrewRep: 0, dailyActivityRep: 0, monthlyActivityRep: 0 };
+    if (occurredAt >= rollingStart && occurredAt <= timestamp) value.last24hCrewRep += points;
+    if (dayKey(occurredAt) === today) value.dailyActivityRep += points;
+    if (monthKey(occurredAt) === month) value.monthlyActivityRep += points;
+    totals.set(key, value);
+  }
+  return totals;
 }
 
 export function normalizeProfile(profile, fallbackName) {
@@ -101,11 +133,15 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
       let roster = store.getRecord(guildId, 'crew_roster', 'current')?.members || INITIAL_CREW_MEMBERS;
       let exactRoster = false;
       let rosterError = null;
+      let activity = [];
+      let activityError = null;
       if (auth.userKey && auth.personaKey) {
         try {
           const live = normalizeRoster(await request('GetMembersRep', [NRZ_CREW_ID], true));
           if (live.length) { roster = live; exactRoster = true; store.putRecord(guildId, 'crew_roster', 'current', { members: live, updatedAt: now(), source: 'NightRiderz Members' }); }
         } catch (error) { rosterError = error.message; }
+        try { activity = await request('GetActivityRep', [NRZ_CREW_ID, 'all'], true); }
+        catch (error) { activityError = error.message; }
       }
       const previous = store.getRecord(guildId, 'crew_current', 'current');
       const previousByName = new Map((previous?.members || []).map(item => [item.name.toLocaleLowerCase('en-US'), item]));
@@ -115,7 +151,7 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
         try { return { ...member, ...normalizeProfile(await request('GetPlayerNext', [member.name]), member.name), profileAvailable: true }; }
         catch { profileFailures++; return { ...member, lastLogin: old?.lastLogin || null, eventsCompleted: old?.eventsCompleted || 0, driverScore: old?.driverScore || 0, level: old?.level || 0, profileAvailable: Boolean(old?.profileAvailable) }; }
       });
-      const timestamp = now(), date = dayKey(timestamp), storedDay = store.getRecord(guildId, 'crew_daily', date);
+      const timestamp = now(), date = dayKey(timestamp), month = monthKey(timestamp), storedDay = store.getRecord(guildId, 'crew_daily', date);
       const previousDay = storedDay ? null : store.listRecords(guildId, 'crew_daily', 90).find(item => item.id < date && (Array.isArray(item.latest) || Array.isArray(item.baseline)));
       const liveSourceChanged = exactRoster && previous && !previous.exactRoster;
       const savedReference = liveSourceChanged ? [] : storedDay?.reference || previousDay?.latest || previousDay?.baseline || [];
@@ -127,17 +163,40 @@ export function createCrewTracker(store, config = {}, { fetcher = fetch, now = D
         return { name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: true };
       });
       const baselineByName = new Map(reference.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
+      const storedMonth = store.getRecord(guildId, 'crew_monthly', month);
+      const monthlyReference = storedMonth?.reference || profiles.map(item => ({ name: item.name, crewRep: item.crewRep }));
+      const monthlyByName = new Map(monthlyReference.map(item => [item.name.toLocaleLowerCase('en-US'), item]));
+      const activityByName = normalizeCrewActivity(activity, timestamp);
+      const snapshots = store.listRecords(guildId, 'crew_snapshot', 500).sort((a, b) => Number(a.capturedAt) - Number(b.capturedAt));
+      const snapshot24h = [...snapshots].reverse().find(item => Number(item.capturedAt) <= timestamp - 24 * 60 * 60_000);
+      const snapshot24hByName = new Map((snapshot24h?.members || []).map(item => [item.name.toLocaleLowerCase('en-US'), item]));
       const members = profiles.map(item => {
         const base = baselineByName.get(item.name.toLocaleLowerCase('en-US')) || item;
+        const monthBase = monthlyByName.get(item.name.toLocaleLowerCase('en-US')) || item;
         const old = previousByName.get(item.name.toLocaleLowerCase('en-US')) || item;
+        const activityValue = activityByName.get(item.name.toLocaleLowerCase('en-US'));
+        const snapshotBase = snapshot24hByName.get(item.name.toLocaleLowerCase('en-US'));
         const comparisonAvailable = Boolean(base);
-        return { ...item, comparisonAvailable, dailyCrewRep: comparisonAvailable ? item.crewRep - numeric(base.crewRep) : 0, dailyEvents: comparisonAvailable ? item.eventsCompleted - numeric(base.eventsCompleted) : 0, dailyDriverScore: comparisonAvailable ? item.driverScore - numeric(base.driverScore) : 0, crewRepChange: item.crewRep - numeric(old.crewRep) };
-      }).sort((a, b) => b.dailyCrewRep - a.dailyCrewRep || b.crewRep - a.crewRep);
-      const totals = members.reduce((sum, item) => ({ crewRep: sum.crewRep + item.crewRep, instantCrewRep: sum.instantCrewRep + item.crewRepChange, dailyCrewRep: sum.dailyCrewRep + item.dailyCrewRep, dailyEvents: sum.dailyEvents + item.dailyEvents, dailyDriverScore: sum.dailyDriverScore + item.dailyDriverScore }), { crewRep: 0, instantCrewRep: 0, dailyCrewRep: 0, dailyEvents: 0, dailyDriverScore: 0 });
+        const snapshotDelta = snapshotBase ? Math.max(0, item.crewRep - numeric(snapshotBase.crewRep)) : 0;
+        return {
+          ...item,
+          comparisonAvailable,
+          last24hCrewRep: snapshotBase ? snapshotDelta : (activityValue?.last24hCrewRep ?? 0),
+          dailyCrewRep: comparisonAvailable ? item.crewRep - numeric(base.crewRep) : 0,
+          monthlyCrewRep: item.crewRep - numeric(monthBase.crewRep),
+          dailyEvents: comparisonAvailable ? item.eventsCompleted - numeric(base.eventsCompleted) : 0,
+          dailyDriverScore: comparisonAvailable ? item.driverScore - numeric(base.driverScore) : 0,
+          crewRepChange: item.crewRep - numeric(old.crewRep),
+        };
+      }).sort((a, b) => b.last24hCrewRep - a.last24hCrewRep || b.crewRep - a.crewRep);
+      const totals = members.reduce((sum, item) => ({ crewRep: sum.crewRep + item.crewRep, instantCrewRep: sum.instantCrewRep + item.last24hCrewRep, last24hCrewRep: sum.last24hCrewRep + item.last24hCrewRep, dailyCrewRep: sum.dailyCrewRep + item.dailyCrewRep, monthlyCrewRep: sum.monthlyCrewRep + item.monthlyCrewRep, dailyEvents: sum.dailyEvents + item.dailyEvents, dailyDriverScore: sum.dailyDriverScore + item.dailyDriverScore }), { crewRep: 0, instantCrewRep: 0, last24hCrewRep: 0, dailyCrewRep: 0, monthlyCrewRep: 0, dailyEvents: 0, dailyDriverScore: 0 });
       const latest = profiles.map(item => ({ name: item.name, crewRep: item.crewRep, eventsCompleted: item.eventsCompleted, driverScore: item.driverScore, profileAvailable: item.profileAvailable }));
-      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, nextRefreshAt: timestamp + CREW_REFRESH_INTERVAL, refreshIntervalMs: CREW_REFRESH_INTERVAL, date, referenceDate, comparisonAvailable: Boolean(reference.length), exactRoster, profileFailures, rosterError, members, ...totals };
+      const status = { enabled: true, crewId: NRZ_CREW_ID, sourceUrl: NRZ_CREW_URL, updatedAt: timestamp, nextRefreshAt: timestamp + CREW_REFRESH_INTERVAL, refreshIntervalMs: CREW_REFRESH_INTERVAL, date, month, referenceDate, comparisonAvailable: Boolean(reference.length), exactRoster, profileFailures, rosterError, activityError, activityAvailable: activityByName.size > 0, members, ...totals };
       store.putRecord(guildId, 'crew_current', 'current', status);
       store.putRecord(guildId, 'crew_daily', date, { reference, referenceDate, latest, updatedAt: timestamp, dailyCrewRep: totals.dailyCrewRep, dailyEvents: totals.dailyEvents, dailyDriverScore: totals.dailyDriverScore });
+      store.putRecord(guildId, 'crew_monthly', month, { reference: monthlyReference, latest, updatedAt: timestamp, monthlyCrewRep: totals.monthlyCrewRep });
+      store.putRecord(guildId, 'crew_snapshot', String(timestamp), { capturedAt: timestamp, members: latest.map(item => ({ name: item.name, crewRep: item.crewRep })) });
+      for (const snapshot of snapshots.filter(item => Number(item.capturedAt) < timestamp - 40 * 24 * 60 * 60_000)) store.deleteRecord(guildId, 'crew_snapshot', snapshot.id);
       if (audit.log) store.addLog(guildId, { type: 'crew.refreshed', actorId: audit.actorId || null, message: `${audit.actorName || 'Bir yetkili'} ekip verilerini elle yeniledi.`, details: { actorName: audit.actorName || null, crewId: NRZ_CREW_ID, exactRoster, profileFailures, instantCrewRep: totals.instantCrewRep, dailyCrewRep: totals.dailyCrewRep } });
       return status;
     })().catch(error => {

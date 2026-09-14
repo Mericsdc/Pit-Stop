@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CREW_REFRESH_INTERVAL, createCrewTracker, INITIAL_CREW_MEMBERS, normalizeProfile, normalizeRoster } from '../src/crew.js';
+import { CREW_REFRESH_INTERVAL, createCrewTracker, INITIAL_CREW_MEMBERS, normalizeCrewActivity, normalizeProfile, normalizeRoster } from '../src/crew.js';
 import { createStore } from '../src/store.js';
 
 const GUILD = '1400000000000000000';
@@ -10,6 +10,16 @@ test('NightRiderz roster and public profiles are normalized defensively', () => 
   assert.deepEqual(normalizeProfile({ name: 'Pilot', last_login: '2026-09-13 10:00:00', races: '599', score: '6,435', level: '98' }, 'x'), { name: 'Pilot', lastLogin: '2026-09-13 10:00:00', eventsCompleted: 599, driverScore: 6435, level: 98 });
   assert.equal(INITIAL_CREW_MEMBERS.length, 33);
   assert.equal(INITIAL_CREW_MEMBERS.reduce((sum, member) => sum + member.crewRep, 0), 38_588_670);
+});
+
+test('crew activity is matched by nickname for rolling, daily and monthly REP', () => {
+  const now = Date.parse('2026-09-14T15:00:00Z');
+  const activity = normalizeCrewActivity([
+    { pseudo: 'Pilot', points: '+5,000 rep', date: '2026-09-14T14:00:00Z', reason: 'race' },
+    { pseudo: 'Pilot', points: '2,000', date: '2026-09-13T15:30:00Z', is_race: 1 },
+    { pseudo: 'Pilot', points: '99,000', date: '2026-09-01T10:00:00Z', reason: 'join' },
+  ], now);
+  assert.deepEqual(activity.get('pilot'), { last24hCrewRep: 7000, dailyActivityRep: 5000, monthlyActivityRep: 7000 });
 });
 
 test('crew tracker stores daily REP, event and score comparisons from live Members data', async t => {
@@ -30,6 +40,8 @@ test('crew tracker stores daily REP, event and score comparisons from live Membe
   assert.equal(current.comparisonAvailable, true);
   assert.equal(current.dailyCrewRep, 350);
   assert.equal(current.instantCrewRep, 350);
+  assert.equal(current.last24hCrewRep, 350);
+  assert.equal(current.monthlyCrewRep, 350);
   assert.equal(current.dailyEvents, 2);
   assert.equal(current.dailyDriverScore, 20);
   assert.equal(current.members.find(member => member.name === 'Pilot').dailyCrewRep, 200);
@@ -59,7 +71,7 @@ test('crew tracker uses the first same-day snapshot for live daily REP', async t
   reputation = 1250; time += 3 * 60_000;
   const current = await tracker.refresh(GUILD, true);
   assert.equal(current.dailyCrewRep, 250);
-  assert.equal(current.instantCrewRep, 250);
+  assert.equal(current.instantCrewRep, 0);
   tracker.close();
 });
 

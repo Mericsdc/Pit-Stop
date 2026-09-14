@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   panelCodeMinutes: 2,
   panelLogoUrl: null,
   panelBannerUrl: null,
+  panelLoginBackgroundUrl: null,
 });
 const BOOLEAN_KEYS = new Set(['leaveEnabled', 'autoRoleEnabled', 'responderEnabled', 'musicEnabled', 'blacklistOnLeave', 'antiSpamEnabled', 'antiPhishingEnabled', 'ticketEnabled', 'defenseEnabled', 'healthEnabled', 'musicRestricted', 'boostedEventEnabled', 'faqEnabled']);
 const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
@@ -106,7 +107,7 @@ function validatePatch(patch) {
     } else if (key === 'musicVolume') {
       if (!Number.isInteger(value) || value < 1 || value > 100) throw new TypeError('Ses düzeyi 1–100 arasında bir tam sayı olmalı.');
       result[key] = value;
-    } else if (['panelLogoUrl', 'panelBannerUrl'].includes(key)) {
+    } else if (['panelLogoUrl', 'panelBannerUrl', 'panelLoginBackgroundUrl'].includes(key)) {
       if (value === null || value === '') { result[key] = null; continue; }
       if (typeof value !== 'string' || value.length > 1000) throw new TypeError('Görsel adresi en fazla 1000 karakter olmalı.');
       let parsed;
