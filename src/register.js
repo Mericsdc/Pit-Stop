@@ -30,5 +30,10 @@ export async function registerCommands(rest, config, commands) {
     if (byName.has(payload.name) && comparable(byName.get(payload.name), config.guildId) === comparable(payload, config.guildId)) continue;
     await rest.post(route, { body: payload });
   }
+  // Global komutlar Discord önbelleğinde gecikebilir. İzin verilen sunuculara da
+  // aynı tanımı yazarak Pit-Stop'un ana sunucusunda güncellemeyi hemen etkinleştir.
+  if (!config.guildId) for (const guildId of config.allowedGuildIds || []) {
+    await registerCommands(rest, { ...config, guildId }, commands);
+  }
   return commands.length;
 }

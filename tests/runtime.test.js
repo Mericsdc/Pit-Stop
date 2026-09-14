@@ -277,6 +277,15 @@ test('guild registration removes unsupported context fields without mutating com
   assert.deepEqual(owned.data.toJSON(), before);
 });
 
+test('global registration also refreshes allowed guild commands immediately', async () => {
+  const owned = registrationCommand('panel-giris'), calls = [];
+  const rest = { get: async () => [], post: async (route, options) => calls.push({ route, body: options.body }) };
+  await registerCommands(rest, { clientId: CLIENT, allowedGuildIds: [GUILD] }, [owned]);
+  assert.deepEqual(calls.map(item => item.route), [Routes.applicationCommands(CLIENT), Routes.applicationGuildCommands(CLIENT, GUILD)]);
+  assert.deepEqual(calls[0].body.contexts, [0]);
+  assert.equal(Object.hasOwn(calls[1].body, 'contexts'), false);
+});
+
 test('registration propagates Discord failures and stops before advertising success', async () => {
   const calls = [];
   const failure = new Error('Discord unavailable');
