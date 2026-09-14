@@ -21,10 +21,11 @@ export function nextBoostedRefreshDelay(timestamp = Date.now(), updateDelay = SI
 }
 
 function findClassEmoji(className, guild) {
-  const match = String(className || '').match(/\bClass\s+([A-Z](?:[12])?)/iu);
-  const token = match?.[1]?.toUpperCase();
+  const value = String(className || '');
+  const match = value.match(/\bClass\s+([A-Z](?:[12])?)/iu);
+  const token = /\bOPEN\b/iu.test(value) || match?.[1]?.toUpperCase() === 'O' ? 'OPEN' : match?.[1]?.toUpperCase();
   if (!token) return null;
-  const candidates = [`${token}class`.toLowerCase(), ...(token === 'S' ? ['s1class'] : [])];
+  const candidates = token === 'OPEN' ? ['openclass', 'oclass'] : [`${token}class`.toLowerCase(), ...(token === 'S' ? ['s1class'] : [])];
   return [...(guild?.emojis?.cache?.values?.() || [])].find(item => candidates.includes(String(item.name || '').toLowerCase())) || null;
 }
 
@@ -47,7 +48,9 @@ export function parseLeaderboardDescription(html, fallbackType = 'Yarış') {
     || String(html || '').match(/<meta\s+content=["']([^"']+)["']\s+name=["']description["']/iu);
   const description = clean(match?.[1]);
   const classMatch = description.match(/\bClass\s+([A-Za-z0-9+-]+)/iu);
-  return { className: classMatch ? `Class ${classMatch[1].toUpperCase()}` : 'Sınıf belirtilmedi', description: description || fallbackType };
+  const classToken = classMatch?.[1]?.toUpperCase();
+  const className = classToken === 'O' || /\bOPEN(?:\s*CLASS)?\b/iu.test(description) ? 'OPEN' : classToken ? `Class ${classToken}` : 'Sınıf belirtilmedi';
+  return { className, description: description || fallbackType };
 }
 
 export function createBoostedEventMonitor(client, store, config = {}, { fetcher = fetch, now = Date.now, logger = () => {} } = {}) {

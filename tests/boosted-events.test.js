@@ -12,23 +12,26 @@ test('Boosted Event data and leaderboard class are normalized defensively', () =
   assert.equal(nextBoostedRefreshDelay(Date.parse('2026-09-13T10:29:50Z')), 100_000);
   assert.equal(nextBoostedRefreshDelay(Date.parse('2026-09-13T10:30:20Z')), 70_000);
   assert.equal(nextBoostedRefreshDelay(Date.parse('2026-09-13T10:32:00Z')), 29.5 * 60_000);
-  const guild = { emojis: { cache: new Map([['emoji', { id: '123', name: 'Dclass', animated: false }]]) } };
+  const guild = { emojis: { cache: new Map([['emoji', { id: '123', name: 'Dclass', animated: false }], ['open', { id: '456', name: 'Openclass', animated: false }]]) } };
   assert.equal(classEmoji('Class D', guild), '<:Dclass:123>');
+  assert.equal(classEmoji('OPEN', guild), '<:Openclass:456>');
+  assert.equal(classEmoji('Class O', guild), '<:Openclass:456>');
   assert.equal(classEmoji('Class D'), '');
   assert.equal(classEmoji('Sınıf belirtilmedi', guild), '');
   assert.deepEqual(normalizeBoostedEvent([{ id: '377', name: 'OUTLAWS (TEAM ESCAPE)', eventModeId: '24', isBoosted: '1' }]), { id: '377', name: 'OUTLAWS', type: 'Team Escape', eventModeId: '24' });
   assert.deepEqual(parseLeaderboardDescription('<meta name="description" content="Class D · Team Escape">'), { className: 'Class D', description: 'Class D · Team Escape' });
+  assert.deepEqual(parseLeaderboardDescription('<meta name="description" content="Class O · Sprint">'), { className: 'OPEN', description: 'Class O · Sprint' });
   assert.equal(normalizeBoostedEvent([{ id: '1', name: 'Race', isBoosted: '0' }]), null);
 });
 
 test('monitor announces a new event once and persists its latest status', async t => {
   const store = createStore(':memory:'); t.after(() => store.close());
   const sent = [], reactions = [];
-  const client = { guilds: { cache: new Map([[GUILD, { emojis: { cache: new Map([['d', { id: '444', name: 'Dclass', animated: false }], ['a', { id: '111', name: 'Aclass', animated: false }]]) }, channels: { fetch: async id => id === CHANNEL ? { isTextBased: () => true, send: async payload => { sent.push(payload); return { react: async emoji => { reactions.push(emoji); } }; } } : null } }]]) } };
+  const client = { guilds: { cache: new Map([[GUILD, { emojis: { cache: new Map([['d', { id: '444', name: 'Dclass', animated: false }], ['a', { id: '111', name: 'Aclass', animated: false }], ['open', { id: '222', name: 'Openclass', animated: false }]]) }, channels: { fetch: async id => id === CHANNEL ? { isTextBased: () => true, send: async payload => { sent.push(payload); return { react: async emoji => { reactions.push(emoji); } }; } } : null } }]]) } };
   let raceId = '377';
   const fetcher = async (url) => String(url).includes('gateway.php')
     ? Response.json([{ id: raceId, name: raceId === '377' ? 'OUTLAWS (TEAM ESCAPE)' : 'ROSEWOOD', eventModeId: '24', isBoosted: '1' }])
-    : new Response(`<meta name="description" content="Class ${raceId === '377' ? 'D' : 'A'} · Team Escape">`);
+    : new Response(`<meta name="description" content="Class ${raceId === '377' ? 'D' : raceId === '378' ? 'A' : 'O'} · Team Escape">`);
   const monitor = createBoostedEventMonitor(client, store, { allowedGuildIds: [GUILD], boostedEventChannelId: CHANNEL }, { fetcher, now: () => 1_000 });
   t.after(() => monitor.close());
   await monitor.refresh();
@@ -46,4 +49,9 @@ test('monitor announces a new event once and persists its latest status', async 
   assert.equal(sent.length, 2);
   assert.deepEqual(reactions, ['444', '111']);
   assert.equal(store.getRecord(GUILD, 'boosted_event', 'current').event.className, 'Class A');
+  raceId = '146';
+  await monitor.refresh();
+  assert.equal(sent.length, 3);
+  assert.match(sent[2].content, /\*\*Sınıf:\*\* OPEN/u);
+  assert.deepEqual(reactions, ['444', '111', '222']);
 });
