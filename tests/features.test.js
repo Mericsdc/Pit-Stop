@@ -83,6 +83,19 @@ test('multiple autoroles retain backward compatibility and cannot clear enabled 
   assert.throws(() => f.store.updateSettings(G, { autoRoleIds: [] }));
   assert.deepEqual(f.store.getSettings(G).autoRoleIds, [R, C]);
 });
+
+test('panel login code is sent in a Discord copyable code block', async t => {
+  const f = fixture(t), command = f.features.commands.find(item => item.data.toJSON().name === 'panel-giris');
+  f.member.permissions = new PermissionsBitField(P.ManageGuild);
+  let reply;
+  await command.execute({
+    guildId: G, user: f.user, member: f.member,
+    reply: async payload => { reply = payload; }, deleteReply: async () => {},
+  });
+  assert.match(reply.content, /Pit-Stop giriş kodunuz:\n\n```\n[A-Za-z0-9_-]{43}\n```/u);
+  assert.match(reply.content, /sağındaki kopyalama düğmesini/u);
+  assert.equal(f.store.listRecords(G, 'panel_login_code').length, 1);
+});
 test('every autorole is validated against actor and bot hierarchy', async () => {
   const guild = { id: G, ownerId: B, roles: { fetch: async id => ({ id, managed: false, editable: id === R }) } };
   const member = { id: U, permissions: new PermissionsBitField(P.ManageRoles), roles: { highest: { comparePositionTo: () => 1 } } };

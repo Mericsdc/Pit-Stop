@@ -151,7 +151,10 @@ export function installCommunityHandlers(client, store, { logger = () => {}, del
       || typeof message.content !== 'string' || !message.content.startsWith('!')) return;
     const settings = store.getSettings(message.guild.id);
     if (!settings.responderEnabled) return;
-    const response = settings.responses.find(({ trigger }) => normalized(message.content) === `!${normalized(trigger)}`);
+    const response = settings.responses.find(({ trigger }) => {
+      const command = normalized(trigger).replace(/^!+/u, '');
+      return normalized(message.content) === `!${command}`;
+    });
     if (!response) return;
 
     const now = Date.now();

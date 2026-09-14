@@ -400,6 +400,7 @@ document.addEventListener('change', async event => {
 document.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target, button = $('button[type="submit"],button:not([type])', form);
+  const buttonContent = button?.innerHTML;
   const guildSelect = $('#guild-select');
   if (guildSelect) guildSelect.disabled = true;
   if (button) button.disabled = true;
@@ -415,7 +416,7 @@ document.addEventListener('submit', async event => {
     if (form.id === 'access-form') await saveSettings({ musicRestricted: $('#music-restricted').checked, musicControllerRoleIds: selectedRoles('controller-roles'), musicControllerUserIds: $('#controller-users').value.split(/\s+/).filter(Boolean) });
     if (form.id === 'panel-access-form') { await saveSettings({ panelAccessRoleIds: selectedRoles('panel-access-roles'), panelSessionHours: Number($('#panel-session-hours').value), panelCodeMinutes: Number($('#panel-code-minutes').value) }); state.panelAccess = await guildApi('panel-access'); render(); }
     if (form.id === 'install-form') { await guildApi('access', { method: 'PUT', body: JSON.stringify({ guildIds: $('#allowed-guilds').value.split(/\s+/).filter(Boolean) }) }); state.dirty = false; notice('İzin verilen sunucular kaydedildi.'); }
-    if (form.id === 'responders-form') await saveSettings({ responderEnabled: $('#responder-enabled').checked, responses: $$('.response-row').map(row => ({ trigger: $('[name="trigger"]', row).value.trim(), reply: $('[name="reply"]', row).value.trim() })) });
+    if (form.id === 'responders-form') await saveSettings({ responderEnabled: $('#responder-enabled').checked, responses: $$('.response-row').map(row => ({ trigger: $('[name="trigger"]', row).value.trim().replace(/^!+/u, ''), reply: $('[name="reply"]', row).value.trim() })) });
     if (form.id === 'music-settings-form') await saveSettings({ musicEnabled: $('#music-enabled').checked, musicVolume: Number($('#default-volume').value), djRoleId: $('#dj-role').value || null });
     if (form.id === 'settings-form') await saveSettings({ logChannelId: $('#log-channel').value || null });
     if (form.id === 'appearance-form') {
@@ -434,7 +435,7 @@ document.addEventListener('submit', async event => {
     if (form.id === 'play-form') { state.guild.music = await guildApi('music', { method: 'POST', body: JSON.stringify({ action: 'play', query: $('#query').value.trim() }) }); render(); notice('Parça çalma sırasına eklendi.'); }
     if (form.id === 'volume-form') { state.guild.music = await guildApi('music', { method: 'POST', body: JSON.stringify({ action: 'volume', volume: Number($('#volume').value) }) }); notice('Ses seviyesi güncellendi.'); }
   } catch (error) { if (form.id === 'code-login-form') $('#login-error').textContent = error.message; notice(error.message, true); }
-  finally { if (button) button.disabled = false; if (guildSelect) guildSelect.disabled = false; }
+  finally { if (button) { button.disabled = false; if (form.id === 'code-login-form' && buttonContent) button.innerHTML = buttonContent; } if (guildSelect) guildSelect.disabled = false; }
 });
 window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
 

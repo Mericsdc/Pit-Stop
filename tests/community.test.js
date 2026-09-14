@@ -119,6 +119,17 @@ test('responders match exact Turkish commands and publish configured reply witho
   assert.equal(fixture.store.getLogs(GUILD)[0].type, 'responder.sent');
 });
 
+test('responders accept legacy saved triggers that already contain an exclamation mark', async t => {
+  const fixture = setup(t);
+  const getSettings = fixture.store.getSettings.bind(fixture.store);
+  t.mock.method(fixture.store, 'getSettings', guildId => ({
+    ...getSettings(guildId), responderEnabled: true, responses: [{ trigger: '!selam', reply: 'Merhaba' }],
+  }));
+  await fixture.emit(Events.MessageCreate, incoming(fixture, '!selam'));
+  assert.equal(fixture.sent.length, 1);
+  assert.equal(fixture.sent[0].content, 'Merhaba');
+});
+
 test('responders ignore bots, webhooks, DMs and partial/prefix-only command matches', async (t) => {
   const fixture = setup(t);
   fixture.store.updateSettings(GUILD, { responderEnabled: true, responses: [{ trigger: 'selam', reply: 'Merhaba' }] });
