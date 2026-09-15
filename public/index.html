@@ -14,7 +14,7 @@
 <body class="logged-out">
   <a class="skip-link" href="#main">İçeriğe geç</a>
   <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Pit-Stop genel bakış"><img id="panel-logo" class="sidebar-brand-image" src="/assets/login-brand.png" alt="Pit-Stop kontrol merkezi" width="2058" height="764"></a>
+    <a class="brand" href="/" aria-label="Pit-Stop genel bakış"><img id="panel-logo" class="sidebar-brand-image" src="/assets/login-brand.png" alt="Pit-Stop kontrol merkezi" width="2058" height="764" draggable="false"></a>
     <nav id="sidebar-nav" aria-label="Panel bölümleri">
       <section class="nav-section" data-nav-group="general"><h2>GENEL</h2><div class="nav-items"><button data-view="overview" class="nav-button active"><span aria-hidden="true">◈</span> Genel bakış</button></div></section>
       <section class="nav-section" data-nav-group="community"><h2>OYUN VE TOPLULUK</h2><div class="nav-items">
@@ -34,12 +34,12 @@
     <header class="topbar"><button id="menu-toggle" class="menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false">☰</button><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
     <button id="menu-backdrop" class="menu-backdrop" type="button" aria-label="Menüyü kapat" hidden></button>
     <main id="main" tabindex="-1">
-      <section class="hero" id="hero"><img id="hero-banner" class="hero-banner" src="/assets/banner.webp" alt=""><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p><span class="hero-tag">NIGHTRIDERZ</span></div></section>
+      <section class="hero" id="hero"><img id="hero-banner" class="hero-banner" src="/assets/banner.webp" alt="" draggable="false"><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p><span class="hero-tag">NIGHTRIDERZ</span></div></section>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <section id="login-panel" class="login-screen">
-        <img id="login-background-image" class="login-background-media" alt="" hidden>
-        <video id="login-background-video" class="login-background-media" muted loop autoplay playsinline preload="metadata" aria-hidden="true" hidden></video>
-        <div class="login-page-brand"><img class="login-brand-image" src="/assets/login-brand.png" alt="Pit-Stop kontrol merkezi" width="2058" height="764" fetchpriority="high"></div>
+        <img id="login-background-image" class="login-background-media" alt="" draggable="false" hidden>
+        <video id="login-background-video" class="login-background-media" draggable="false" muted loop autoplay playsinline preload="metadata" aria-hidden="true" hidden></video>
+        <div class="login-page-brand"><img class="login-brand-image" src="/assets/login-brand.png" alt="Pit-Stop kontrol merkezi" width="2058" height="764" fetchpriority="high" draggable="false"></div>
         <div class="login-card">
           <span class="login-eyebrow">KONTROL MERKEZİ</span><h1>Hoş geldiniz</h1><p>Kontrol merkezine erişmek için Discord botundan aldığın tek kullanımlık giriş kodunu kullan.</p>
           <div id="login-time" class="login-time" aria-hidden="true">--:--</div><div id="login-datetime" class="login-datetime"></div>

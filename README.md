@@ -4,6 +4,10 @@
 
 Türkçe Discord botu ve Discord ile giriş yapılan yönetim paneli. Node.js 24, discord.js 14, SQLite ve Lavalink kullanır.
 
+Panel arayüzünde metin kopyalama, kesme, görsel/video sürükleme ve sağ tık menüsü kapalıdır.
+Form alanları yazma ve yapıştırma için seçilebilir kalır. Bu tarayıcı arayüzü önlemidir;
+web istemcisine gönderilmiş içeriğin geliştirici araçlarıyla alınamayacağına dair bir güvenlik sınırı oluşturmaz.
+
 - Ayrılan üyeler için kanal ve mesaj şablonu; katılan insan üyelere birden fazla otomatik rol.
 - Panelden tanımlanan `!komut` cevapları; büyük/küçük harf duyarsız tam eşleşme.
 - Yetki kontrollü `/clear` ve `/temizle`; sabitlenmiş, sistem ve 14 günden eski mesajları korur.

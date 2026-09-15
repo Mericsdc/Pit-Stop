@@ -1,6 +1,19 @@
 import { staticHosting, livePanelUrl } from './site-config.js';
 import { renderRpgContent } from './rpg-view.js';
 
+// Keep panel artwork and rendered records inside the interface. Form fields stay editable,
+// but copying/cutting, drag export and the context menu are disabled across the site.
+for (const type of ['copy', 'cut', 'dragstart', 'contextmenu']) {
+  document.addEventListener(type, event => event.preventDefault(), { capture: true });
+}
+document.addEventListener('selectstart', event => {
+  if (!event.target.closest?.('input, textarea, select')) event.preventDefault();
+}, { capture: true });
+new MutationObserver(() => {
+  for (const media of document.querySelectorAll('img, video')) media.draggable = false;
+}).observe(document.documentElement, { childList: true, subtree: true });
+for (const media of document.querySelectorAll('img, video')) media.draggable = false;
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null };
@@ -186,7 +199,7 @@ function renderResponders() {
 }
 function musicCover(track) {
   return track?.artworkUrl
-    ? `<div class="music-cover"><img src="${escape(track.artworkUrl)}" alt="${escape(track.title || 'Şarkı')} kapak görseli" referrerpolicy="no-referrer"></div>`
+    ? `<div class="music-cover"><img src="${escape(track.artworkUrl)}" alt="${escape(track.title || 'Şarkı')} kapak görseli" referrerpolicy="no-referrer" draggable="false"></div>`
     : '<div class="record" aria-hidden="true"><span>•</span></div>';
 }
 function renderMusic() {
