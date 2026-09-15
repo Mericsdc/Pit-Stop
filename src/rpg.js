@@ -18,6 +18,30 @@ const waits = { work: 30 * 60_000, mine: 15 * 60_000, battle: 5 * 60_000 };
 const equipment = id => RPG_ITEMS.find(item => item.id === id);
 export const rpgLevel = xp => Math.floor(Math.sqrt(xp / 100)) + 1;
 const initial = name => ({ name, coins: 0, xp: 0, wins: 0, losses: 0, sword: null, armor: null, inventory: [], cooldowns: {}, receipts: [] });
+export const RPG_GUIDE = [
+  '⚔️ **Pit-Stop RPG rehberi**',
+  '**1. Kazan:** /çalış ile 30 dakikada bir 50–100 altın; /maden ile 15 dakikada bir 25–65 altın kazan. Madende %15 ihtimalle 100–180 altınlık kristal çıkar.',
+  '**2. Güçlen:** /mağaza ile fiyatlara bak. /satın-al eşya:... ile ekipman al. En güçlü kılıç ve zırh otomatik kuşanılır; aynı eşya ikinci kez alınamaz.',
+  '**3. Savaş:** /savaş canavar:... ile 5 dakikada bir savaş. Goblin ile başlayabilirsin. Her iki taraf 1–20 arasında zar atar. Senin zarına kılıç, zırh ve seviye bonusu; canavara kendi gücü eklenir. Eşitlikte sen kazanırsın.',
+  '**4. Ödül ve kayıp:** Zafer altın ve XP kazandırır. Yenilgi, canavar ödülünün %20’si kadar altın götürür; bakiyen sıfırın altına düşmez ve ekipmanın kaybolmaz.',
+  '**5. Takip et:** /profil bakiyeni, seviyeni ve envanterini gösterir. /sıralama sunucunun ilk 10 oyuncusunu XP, galibiyet ve altına göre sıralar.',
+  'İlerlemen ve bekleme sürelerin yeniden başlatmada korunur. Her sunucunun ekonomisi ayrıdır. /rpg-rehber ile bu rehberi yeniden açabilirsin.',
+].join('\n\n');
+
+export function rpgDashboard(store, guildId) {
+  return {
+    updatedAt: Date.now(), items: RPG_ITEMS, monsters: RPG_MONSTERS,
+    commands: createRpg(store).commands.map(({ data }) => {
+      const command = data.toJSON();
+      return { name: command.name, description: command.description, usage: `/${command.name}${(command.options || []).map(option => ` ${option.name}:...`).join('')}` };
+    }),
+    leaderboard: store.rpgLeaderboard(guildId).map((player, index) => ({
+      rank: index + 1, name: player.name, level: rpgLevel(player.xp), xp: player.xp,
+      coins: player.coins, wins: player.wins, losses: player.losses,
+      sword: equipment(player.sword)?.name || null, armor: equipment(player.armor)?.name || null,
+    })),
+  };
+}
 class RpgError extends Error {}
 export function createRpg(store, { now = Date.now, roll = randomInt } = {}) {
   function profile(guildId, user) { return store.getRecord(guildId, 'rpg_player', user.id) || initial(user.globalName || user.username); }
@@ -81,6 +105,7 @@ export function createRpg(store, { now = Date.now, roll = randomInt } = {}) {
   });
   const mutate = action => i => act(i.guildId, i.user, action, i.options?.getString(action === 'buy' ? 'eşya' : 'canavar'), i.id);
   const commands = [
+    command('rpg-rehber', 'RPG başlangıç rehberi, komutlar ve savaş kuralları.', () => RPG_GUIDE),
     command('çalış', 'Garajda çalışıp altın ve XP kazan. Bekleme: 30 dakika.', mutate('work')),
     command('maden', 'Cevher ve nadir kristal bulup altın kazan. Bekleme: 15 dakika.', mutate('mine')),
     command('mağaza', 'Sanal kılıç ve zırh mağazasını göster.', () => `🛍️ **Pit-Stop mağazası**\n${RPG_ITEMS.map(item => `**${item.name}** — ${item.price} altın · +${item.bonus} ${item.slot === 'sword' ? 'saldırı' : 'savunma'}`).join('\n')}\n\n/satın-al ile satın al. En güçlü kılıç ve zırh otomatik kuşanılır.`),

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { safeError } from './logger.js';
+import { rpgDashboard } from './rpg.js';
 
 const random = () => randomBytes(32).toString('base64url');
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -341,10 +342,11 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles|rpg))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
+      if (resource === 'rpg' && request.method === 'GET') { json(response, 200, rpgDashboard(store, guildId)); return; }
       if (!resource && request.method === 'GET') {
         await Promise.all([guild.channels.fetch(), guild.roles.fetch(), guild.emojis?.fetch?.() || Promise.resolve()]);
         const me = guild.members.me;

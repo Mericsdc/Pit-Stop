@@ -187,6 +187,15 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
 .login-card .security-note { font-size: 11px !important; line-height: 1.7 !important; }
 .login-card .login-help p, .login-card .login-help a { font-size: 12px; }
 #community-form, #responders-form { display: grid; gap: var(--gap); }
+#rpg-content { display: grid; gap: var(--gap); min-width: 0; }
+.rpg-catalog { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.rpg-item { display: flex; flex-direction: column; gap: 16px; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--raised); min-width: 0; }
+.rpg-item-heading { display: flex; align-items: center; gap: 12px; }
+.rpg-item h3 { margin: 0; font-size: 15px; }
+.rpg-item-stats { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
+.rpg-table table { min-width: 0; }
+@media (max-width: 1180px) { .rpg-catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .rpg-catalog { grid-template-columns: 1fr; } }
 .reaction-role-layout { align-items: start; }
 .reaction-role-layout > .card { height: auto; }
 .reaction-role-heading { margin: 4px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }

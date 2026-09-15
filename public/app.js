@@ -4,14 +4,14 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null };
 let guildLoadVersion = 0;
-const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
-const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
+const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
+const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
 const defaultNavOrder = Object.values(navGroups).flat();
 const overviewHeightKey = 'pitstop-overview-card-height';
 function savedNavOrder() {
   try {
     const value = JSON.parse(localStorage.getItem('pitstop-nav-order') || '[]');
-    return Array.isArray(value) && value.length === defaultNavOrder.length && defaultNavOrder.every(view => value.includes(view)) ? value : [...defaultNavOrder];
+    return Array.isArray(value) ? [...new Set(value.filter(view => defaultNavOrder.includes(view))), ...defaultNavOrder.filter(view => !value.includes(view))] : [...defaultNavOrder];
   } catch { return [...defaultNavOrder]; }
 }
 function applyNavOrder() {
@@ -151,6 +151,30 @@ function renderOverview() {
   <div class="quick-actions"><button class="button subtle" data-go="community">Üye ayarlarını düzenle ↗</button></div></section>
   <section class="card dashboard-resizable" data-dashboard-size><div class="card-header"><h3>${music.current ? 'Şimdi garajda çalıyor' : 'En son garajda çalınan'}</h3>${badge(music.connected, 'Bağlı', 'Beklemede')}</div>${musicCover(music.current || music.lastPlayed)}<div class="now-playing"><h3>${escape((music.current || music.lastPlayed)?.title || 'Henüz bir parça çalmıyor')}</h3><p>${escape((music.current || music.lastPlayed)?.author || 'Ses kanalına katıl, müzik istasyonundan bir parça seç.')}</p></div><div class="quick-actions"><button class="button primary" data-go="music">Müzik istasyonunu aç ♫</button></div></section>
   <section class="card wide"><div class="card-header"><h3>Son hareketler</h3><button class="button subtle" data-go="logs">Tüm kayıtlar ↗</button></div><div id="recent-logs" class="muted">Kayıtlar yükleniyor…</div></section></div>`;
+}
+
+function renderRpg() {
+  return `<section class="card"><div class="card-header"><div><h3>Garajdan maceraya</h3><p class="muted">Altın kazan, ekipmanını güçlendir ve sunucunun sıralamasında yüksel.</p></div><span class="badge">/rpg-rehber</span></div><p class="muted tiny">Oyun komutlarını Discord’da kullanın. Bu sayfada güncel eşya kataloğunu, canavarları ve ilk 10 oyuncuyu takip edebilirsiniz.</p></section><div id="rpg-content"><div class="loading">RPG bilgileri yükleniyor…</div></div>`;
+}
+function rpgBody(data) {
+  const tiers = ['','Başlangıç','Gelişmiş','Efsanevi'];
+  return `<section class="card rpg-table"><div class="card-header"><div><h3>Oyuncu sıralaması</h3><p class="muted tiny">İlk 10 · XP, ardından galibiyet ve altın · 15 saniyede bir yenilenir.</p></div><span class="muted tiny">Son güncelleme: ${date(data.updatedAt)}</span></div>${data.leaderboard.length ? `<div class="table-wrap"><table><thead><tr><th>SIRA / OYUNCU</th><th>SEVİYE / XP</th><th>ALTIN</th><th>SAVAŞLAR</th><th>EKİPMAN</th></tr></thead><tbody>${data.leaderboard.map(p => `<tr><td data-label="SIRA / OYUNCU"><strong>${number(p.rank)}. ${escape(p.name)}</strong></td><td data-label="SEVİYE / XP">Seviye ${number(p.level)}<small class="muted">${number(p.xp)} XP</small></td><td data-label="ALTIN">${number(p.coins)} altın</td><td data-label="SAVAŞLAR">${number(p.wins)} galibiyet<small class="muted">${number(p.losses)} yenilgi</small></td><td data-label="EKİPMAN">${escape(p.sword || 'Kılıç yok')}<small class="muted">${escape(p.armor || 'Zırh yok')}</small></td></tr>`).join('')}</tbody></table></div>` : empty('Henüz oyuncu yok. Discord’da /çalış veya /maden ile başlayın.')}</section>
+  <section class="card"><div class="card-header"><div><h3>Eşya kataloğu</h3><p class="muted tiny">/satın-al komutuyla satın alınır. En güçlü kılıç ve zırh otomatik kuşanılır.</p></div><span class="badge">${data.items.length} eşya</span></div><div class="rpg-catalog">${data.items.map(item => `<article class="rpg-item"><div class="rpg-item-heading"><span class="module-icon" aria-hidden="true">${item.slot === 'sword' ? '⚔' : '🛡'}</span><div><h3>${escape(item.name)}</h3><span class="muted tiny">${tiers[item.tier] || ''} · ${item.slot === 'sword' ? 'Kılıç' : 'Zırh'}</span></div></div><div class="rpg-item-stats"><strong>${number(item.price)} altın</strong><span class="badge">+${number(item.bonus)} ${item.slot === 'sword' ? 'saldırı' : 'savunma'}</span></div></article>`).join('')}</div></section>
+  <section class="card"><div class="card-header"><div><h3>RPG komutları</h3><p class="muted tiny">Botun güncel RPG komut listesi.</p></div><span class="badge">${data.commands.length} komut</span></div><div class="command-list">${data.commands.map(c => `<article class="command-item"><code>${escape(c.usage)}</code><p>${escape(c.description)}</p></article>`).join('')}</div></section>
+  <section class="card"><div class="card-header"><div><h3>Canavarlar ve ödüller</h3><p class="muted tiny">/savaş ile seçin. Ekipman ve seviye, d20 zarınıza bonus ekler.</p></div></div><div class="rpg-catalog">${data.monsters.map(m => `<article class="rpg-item"><h3>${escape(m.name)}</h3><span class="muted tiny">Canavar gücü: +${number(m.defense)}</span><div class="rpg-item-stats"><strong>${number(m.reward)} altın</strong><span class="badge">${number(m.xp)} XP</span></div></article>`).join('')}</div></section>`;
+}
+let rpgLoading = false;
+async function loadRpg() {
+  if (rpgLoading) return;
+  rpgLoading = true;
+  const guildId = state.guild.id;
+  try {
+    const data = await guildApi('rpg');
+    if (state.guild?.id !== guildId || state.view !== 'rpg' || !$('#rpg-content')) return;
+    $('#rpg-content').innerHTML = rpgBody(data);
+  } catch (error) {
+    if (state.guild?.id === guildId && state.view === 'rpg' && $('#rpg-content')) $('#rpg-content').innerHTML = `<div class="hint">${escape(error.message)} Üstteki Yenile düğmesiyle tekrar deneyin.</div>`;
+  } finally { rpgLoading = false; }
 }
 
 function renderCommunity() {
@@ -295,7 +319,7 @@ function render() {
   $('#view-title').textContent = titles[state.view];
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  const page = ({ overview: renderOverview, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
+  const page = ({ overview: renderOverview, rpg: renderRpg, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
   $('#view-content').innerHTML = page.replaceAll('/sağlık-asistanı', '/healthcare');
   applyOverviewHeight();
   if (['blacklist', 'tickets', 'tools', 'faq', 'reactionRoles', 'access', 'settings'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
@@ -304,6 +328,7 @@ function render() {
   if ($('#leave-preview')) updateLeavePreview();
   if (state.view === 'crew') void loadCrew().catch(error => notice(error.message, true));
   if (state.view === 'boosted') updateBoostedProgress();
+  if (state.view === 'rpg') void loadRpg();
   if (state.view === 'reactionRoles') updateReactionRolePreview();
 }
 async function loadGuild(guildId) {
@@ -591,6 +616,7 @@ setInterval(async () => {
   try {
     if (state.view === 'logs') await loadLogs();
     if (state.view === 'overview') await loadLogs(false, true);
+    if (state.view === 'rpg' && !$('#rpg-content')?.contains(document.activeElement)) await loadRpg();
     if (state.view === 'music' && !$('#query')?.value && !$('#view-content').contains(document.activeElement)) { const music = await guildApi('music'); state.guild.music = music; render(); }
   } catch { /* User-triggered refresh reports connection errors without interrupting editing. */ }
 }, 15_000);

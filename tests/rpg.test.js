@@ -83,8 +83,22 @@ test('balances and cooldowns survive restart; ranking stays guild scoped', () =>
 test('commands serialize and every shop choice matches a server-side item', t => {
   const { rpg } = fixture(t);
   const commands = rpg.commands.map(c => c.data.toJSON());
-  assert.equal(commands.length, 7);
+  assert.equal(commands.length, 8);
   assert.deepEqual(commands.find(c => c.name === 'satın-al').options[0].choices.map(c => c.value), RPG_ITEMS.map(i => i.id));
+});
+
+test('RPG guide explains every command privately without creating a player', async t => {
+  const { rpg, store } = fixture(t);
+  let reply, deferred;
+  await rpg.commands.find(c => c.data.name === 'rpg-rehber').execute({
+    guildId: GUILD, user, inGuild: () => true,
+    deferReply: async options => { deferred = options; },
+    editReply: async payload => { reply = payload; },
+  });
+  assert.equal(deferred.flags, 64);
+  assert.ok(reply.content.length < 2000);
+  for (const command of rpg.commands) assert.ok(reply.content.includes(`/${command.data.name}`));
+  assert.equal(store.getRecord(GUILD, 'rpg_player', user.id), null);
 });
 
 test('parallel command submissions reward once and rejected actions recover', async t => {

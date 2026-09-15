@@ -159,6 +159,31 @@ function noSecrets(value) {
   for (const secret of SECRETS) assert.equal(value.includes(secret), false, 'A private credential was exposed');
 }
 
+test('RPG dashboard requires guild access and returns scoped ranking, catalog and actual commands', async t => {
+  const fixture = await setup(t);
+  const path = `/api/guilds/${GUILD}/rpg`;
+  assert.equal((await fixture.request(path)).status, 401);
+  const session = await fixture.login();
+  const headers = { Cookie: session.cookie };
+  const player = { name: 'Pilot', xp: 40, coins: 100, wins: 1, losses: 0, sword: 'demir-kilic', armor: null, receipts: ['private'], cooldowns: { work: 123 } };
+  fixture.store.putRecord(GUILD, 'rpg_player', USER, player);
+  fixture.store.putRecord(GUILD, 'rpg_player', ROLE, { ...player, name: 'Champion', xp: 400 });
+  fixture.store.putRecord(OTHER_GUILD, 'rpg_player', USER, { ...player, name: 'Other server', xp: 99999 });
+  const response = await fixture.request(path, { headers });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.deepEqual(data.leaderboard.map(p => p.name), ['Champion', 'Pilot']);
+  assert.equal(data.leaderboard[0].level, 3);
+  assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
+  assert.equal(data.items.length, 6);
+  assert.equal(data.monsters.length, 3);
+  assert.equal(data.commands.length, 8);
+  assert.ok(data.commands.some(c => c.usage === '/rpg-rehber'));
+  assert.ok(!JSON.stringify(data).includes('receipts'));
+  assert.ok(!JSON.stringify(data).includes('cooldowns'));
+  assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/rpg`, { headers })).status, 403);
+});
+
 test('OAuth HTTP flow issues protected state/session cookies and attempts silent reuse first', async (t) => {
   const fixture = await setup(t);
   const session = await fixture.login();

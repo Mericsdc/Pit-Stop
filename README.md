@@ -15,6 +15,11 @@ Türkçe Discord botu ve Discord ile giriş yapılan yönetim paneli. Node.js 24
 
 ## Mini RPG ve ekonomi
 
+`/rpg-rehber` başlangıç adımlarını, bütün RPG komutlarını ve savaş kurallarını özel yanıtla açıklar.
+Panelde **Oyun ve topluluk → Mini RPG ve ekonomi** sayfası; çalışan komutları,
+altı ekipmanın fiyat/güç listesini, canavarları ve ilk 10 oyuncuyu gösterir.
+Sıralama sayfa açıkken 15 saniyede bir yenilenir; oyuncuların kuşandığı kılıç ve zırh da listelenir.
+
 Her Discord sunucusunun ekonomisi ayrıdır. `/çalış` 30 dakikada bir 50–100 altın,
 `/maden` 15 dakikada bir 25–65 altın verir; %15 olasılıkla nadir kristal 100–180 altın kazandırır.
 `/mağaza` ekipmanları listeler, `/satın-al eşya:...` satın alır; en güçlü kılıç ve zırh otomatik kuşanılır.
