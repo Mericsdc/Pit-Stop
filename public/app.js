@@ -160,6 +160,8 @@ function renderOverview() {
     ? `${number(dashboard.onlineCount)} çevrimiçi · ${number(dashboard.offlineCount)} çevrimdışı`
     : 'Çevrimiçi durumu kullanılamıyor';
   const issues = [!bot.ready, s.musicEnabled && !music.available].filter(Boolean).length;
+  const inactive = modules.length - active;
+  const degraded = issues > 0 || inactive > 0;
   const track = music.current || music.lastPlayed;
   const quickActions = [
     ['♧', 'Üyeleri yönet', 'community'], ['🏁', 'REP yönetimi', 'crew'],
@@ -174,14 +176,14 @@ function renderOverview() {
       <div class="card stat"><div class="stat-label">Bot durumu <span class="status-dot ${bot.ready ? 'online' : ''}" aria-hidden="true"></span></div><div class="stat-value status-value">${bot.ready ? 'Çevrimiçi' : 'Bağlanıyor'}</div><div class="stat-foot">${number(bot.ping)} ms gecikme · ${uptime(bot.uptime)} çalışma</div></div>
     </div>
     <div class="overview-primary-grid">
-      <section class="card dashboard-resizable overview-activity-card" data-dashboard-size><div class="card-header"><div><span class="card-kicker">SON 24 SAAT</span><h3>Sunucu aktivitesi</h3></div>${dashboard.hasActivity ? '<span class="badge on">● Canlı veri</span>' : '<span class="badge">Veri birikiyor</span>'}</div>${overviewActivityChart(dashboard)}</section>
+      <section class="card dashboard-resizable overview-activity-card" data-dashboard-size><div class="card-header"><div><span class="card-kicker">AKTİVİTE</span><h3>Sunucu aktivitesi</h3></div><span class="activity-window">Son 24 saat</span></div>${overviewActivityChart(dashboard)}</section>
       <section class="card overview-actions-card"><div class="card-header"><div><span class="card-kicker">KISAYOLLAR</span><h3>Hızlı işlemler</h3></div></div><div class="overview-action-list">${quickActions.map(([icon, title, view]) => `<button type="button" data-go="${view}"><span aria-hidden="true">${icon}</span><strong>${title}</strong><b aria-hidden="true">→</b></button>`).join('')}</div></section>
     </div>
     <div class="overview-lower-grid">
       <section class="card overview-recent-card"><div class="card-header"><div><span class="card-kicker">YÖNETİM AKIŞI</span><h3>Son hareketler</h3></div><button class="button subtle" data-go="logs">Tüm kayıtlar →</button></div><div id="recent-logs" class="overview-log-list muted">Kayıtlar yükleniyor…</div></section>
       <div class="overview-side-stack">
         <section class="card overview-music-card"><div class="card-header"><div><span class="card-kicker">MÜZİK</span><h3>Şimdi çalıyor</h3></div>${badge(music.connected, 'Bağlı', 'Beklemede')}</div><div class="overview-track">${compactMusicCover(track)}<div class="overview-track-copy"><strong>${escape(track?.title || 'Şu anda müzik çalmıyor')}</strong><span>${escape(track?.author || 'Müzik istasyonundan bir parça seçin.')}</span>${music.current ? `<small>${music.paused ? 'Duraklatıldı' : 'Çalıyor'} · ${duration(music.current.duration)}</small>` : music.lastPlayed ? '<small>En son çalınan parça</small>' : ''}</div></div><div class="overview-music-actions">${music.current ? `<button class="button subtle" data-control="stop">■ Durdur</button><button class="button subtle" data-control="skip">Atla →</button>` : ''}<button class="button subtle" data-go="music">İstasyona git →</button></div></section>
-        <section class="card overview-system-card"><div class="card-header"><div><span class="card-kicker">MODÜLLER</span><h3>Sistem durumu</h3></div><strong>${active} / ${modules.length}</strong></div><div class="system-summary ${issues ? 'warning' : 'healthy'}"><span class="status-dot ${issues ? '' : 'online'}"></span><div><strong>${issues ? `${issues} sistem kontrol edilmeli` : 'Sistemler normal çalışıyor'}</strong><small>${bot.ready ? 'Discord bağlantısı aktif' : 'Discord bağlantısı bekleniyor'}</small></div></div><button class="overview-inline-link" data-go="settings">Modülleri yönet →</button></section>
+        <section class="card overview-system-card"><div class="card-header"><div><span class="card-kicker">MODÜLLER</span><h3>Sistem durumu</h3></div><strong>${active} / ${modules.length}</strong></div><div class="system-summary ${degraded ? 'warning' : 'healthy'}"><span class="status-dot ${degraded ? '' : 'online'}"></span><div><strong>${issues ? `${issues} sistem kontrol edilmeli` : inactive ? `${inactive} modül kapalı` : 'Sistemler normal çalışıyor'}</strong><small>${bot.ready ? 'Discord bağlantısı aktif' : 'Discord bağlantısı bekleniyor'}</small></div></div><button class="overview-inline-link" data-go="settings">Modülleri yönet →</button></section>
       </div>
     </div>
   </div>`;
@@ -196,6 +198,8 @@ function compactMusicCover(track) {
 function overviewActivityChart(dashboard) {
   const series = Array.isArray(dashboard.series) && dashboard.series.length === 24
     ? dashboard.series : Array.from({ length: 24 }, (_, index) => ({ label: `${String(index).padStart(2, '0')}:00`, messages: 0, commands: 0, total: 0 }));
+  const populatedHours = series.filter(item => Number(item.total || 0) > 0).length;
+  if (populatedHours < 2) return `<div class="activity-empty"><span aria-hidden="true">⌁</span><strong>Aktivite verileri toplanıyor</strong><p>İstatistikler yeterli veri oluştuğunda burada görünecek.</p><small>Son 24 saat</small></div>`;
   const maximum = Math.max(1, ...series.map(item => Number(item.total || 0)));
   const points = series.map((item, index) => `${(index / 23 * 1000).toFixed(1)},${(210 - Number(item.total || 0) / maximum * 178).toFixed(1)}`).join(' ');
   const dots = series.map((item, index) => {
@@ -367,6 +371,7 @@ async function loadCrew(force = false) {
 
 function render() {
   if (!state.guild) return;
+  document.body.classList.toggle('overview-page', state.view === 'overview');
   $('#hero').hidden = state.view !== 'overview';
   $('#guild-name').textContent = state.guild.name;
   $('#view-title').textContent = titles[state.view];
