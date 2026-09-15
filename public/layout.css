@@ -187,6 +187,20 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
 .login-card .security-note { font-size: 11px !important; line-height: 1.7 !important; }
 .login-card .login-help p, .login-card .login-help a { font-size: 12px; }
 #community-form, #responders-form { display: grid; gap: var(--gap); }
+.reaction-role-layout { align-items: start; }
+.reaction-role-layout > .card { height: auto; }
+.reaction-role-heading { margin: 4px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
+.reaction-role-mappings { display: grid; gap: 12px; }
+.reaction-role-row { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(200px, 1.2fr) 44px; gap: 12px; align-items: end; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--raised); }
+.reaction-role-row .button { width: 44px; height: 46px; padding: 0; }
+.discord-message-preview { min-height: 180px; }
+.discord-message-preview > strong { color: var(--cyan); }
+.discord-message-preview > p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.reaction-preview-list, .reaction-record-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.reaction-preview-list > span { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.reaction-preview-list small { color: var(--muted); }
+.reaction-record-list { flex-direction: column; align-items: flex-start; }
+.reaction-record-list > span { padding: 5px 9px; border-radius: 6px; background: var(--raised); }
 .login-card .form-stack > .button:last-child { align-self: stretch; }
 .login-card .form-error:empty { display: none; }
 
@@ -253,6 +267,10 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
   .response-row .trigger-field { grid-column: 1; grid-row: 1; }
   .response-row .reply-field { grid-column: 1 / -1; grid-row: 2; }
   .response-row > .button { grid-column: 2; grid-row: 1; }
+  .reaction-role-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .reaction-role-row label:first-child { grid-column: 1; grid-row: 1; }
+  .reaction-role-row label:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .reaction-role-row > .button { grid-column: 2; grid-row: 1; }
   .form-actions > .button { flex: 1 1 160px; }
   .form-stack > .button:last-child { align-self: stretch; }
   .search-row { flex-wrap: wrap; }

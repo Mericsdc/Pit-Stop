@@ -15,6 +15,7 @@ import { createFeatures } from './features.js';
 import { installAuditIdentity } from './audit.js';
 import { createCrewTracker } from './crew.js';
 import { createBoostedEventMonitor } from './boosted-events.js';
+import { installReactionRoles } from './reaction-roles.js';
 
 let config;
 try {
@@ -25,8 +26,8 @@ try {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildModeration, ...(config.presenceEnabled ? [GatewayIntentBits.GuildPresences] : [])],
-  partials: [Partials.Message, Partials.Channel],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildModeration, ...(config.presenceEnabled ? [GatewayIntentBits.GuildPresences] : [])],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
   allowedMentions: { parse: [], repliedUser: false },
   presence: { activities: [{ name: '/yardim • Pit-Stop', type: ActivityType.Playing }], status: 'online' },
 });
@@ -41,6 +42,7 @@ const boostedEvents = createBoostedEventMonitor(client, store, config, { logger:
 features.install();
 const allCommands = [...commands, ...music.commands, ...features.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
+const removeReactionRoles = installReactionRoles(client, store, { logger: log });
 const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, config, logger: log });
 let stopping = false;
 let disconnectedAt;
@@ -53,6 +55,7 @@ async function shutdown(code, reason) {
   const deadline = setTimeout(() => process.exit(code), 5000);
   deadline.unref();
   removeCommunityHandlers();
+  removeReactionRoles();
   features.close();
   crew.close();
   boostedEvents.close();

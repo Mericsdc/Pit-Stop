@@ -2,10 +2,10 @@ import { staticHosting, livePanelUrl } from './site-config.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], editingFaqId: null };
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null };
 let guildLoadVersion = 0;
-const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', community: 'Üyeler ve roller', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
-const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music'], automation: ['community', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
+const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
+const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
 const defaultNavOrder = Object.values(navGroups).flat();
 const overviewHeightKey = 'pitstop-overview-card-height';
 function savedNavOrder() {
@@ -99,6 +99,25 @@ function channelOptions(selected, voice = false, textOnly = false) {
 function roleOptions(selected, assignable = false) {
   return `<option value="">${assignable ? 'Rol seçin' : 'Herkes kullanabilir'}</option>` + state.guild.roles.filter(role => !assignable || role.assignable).map(role => `<option value="${escape(role.id)}" ${selected === role.id ? 'selected' : ''}>${escape(role.name)}</option>`).join('');
 }
+const standardReactionEmojis = ['✅','❌','🎮','🏁','🚗','🎵','🔔','💬','🏆','🔧','❤️','⭐','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪'];
+function reactionEmojiOptions(selected = '') {
+  const standard = standardReactionEmojis.map(emoji => `<option value="unicode:${emoji}" ${selected === `unicode:${emoji}` ? 'selected' : ''}>${emoji}</option>`).join('');
+  const custom = (state.guild.emojis || []).map(emoji => `<option value="custom:${escape(emoji.id)}" ${selected === `custom:${emoji.id}` ? 'selected' : ''}>:${escape(emoji.name)}:</option>`).join('');
+  return `<option value="">Tepki seçin</option><optgroup label="Standart emojiler">${standard}</optgroup>${custom ? `<optgroup label="Sunucu emojileri">${custom}</optgroup>` : ''}`;
+}
+function reactionRoleRow(mapping = {}) {
+  return `<div class="reaction-role-row"><label>Tepki<select name="reaction-emoji" required>${reactionEmojiOptions(mapping.emoji || '')}</select></label><label>Verilecek rol<select name="reaction-role" required>${roleOptions(mapping.roleId || '', true)}</select></label><button type="button" class="button danger remove-reaction-role" aria-label="Emoji ve rol satırını kaldır">×</button></div>`;
+}
+function updateReactionRolePreview() {
+  const preview = $('#reaction-role-preview');
+  if (!preview) return;
+  const content = $('#reaction-role-content')?.value.trim() || 'Discord mesajınız burada görünür.';
+  const mappings = $$('.reaction-role-row').map(row => ({ emoji: $('[name="reaction-emoji"]', row)?.selectedOptions[0]?.textContent, role: $('[name="reaction-role"]', row)?.selectedOptions[0]?.textContent })).filter(item => item.emoji && item.role && item.emoji !== 'Tepki seçin' && item.role !== 'Rol seçin');
+  preview.innerHTML = `<div class="discord-message-preview"><strong>Pit-Stop</strong><p>${escape(content)}</p><div class="reaction-preview-list">${mappings.map(item => `<span>${escape(item.emoji)} <b>1</b><small>→ ${escape(item.role)}</small></span>`).join('') || '<span class="muted">Emoji ve rol eşleştirmeleri burada görünür.</span>'}</div></div>`;
+}
+function renderReactionRoles() {
+  return `<div class="grid-2 balanced-grid reaction-role-layout"><form id="reaction-role-form" class="card form-stack"><div class="card-header"><div><h3>Yeni rol mesajı</h3><p class="muted tiny">Mesajı yayımlayın; üyeler tepkiye tıklayınca karşılık gelen rolü alır, tepkiyi kaldırınca rol geri alınır.</p></div><span class="badge">En fazla 20 tepki</span></div><label>Yayın kanalı<select id="reaction-role-channel" required>${channelOptions('')}</select></label><label>Discord mesajı<textarea id="reaction-role-content" maxlength="1800" rows="6" required placeholder="Almak istediğiniz rolün tepkisine tıklayın."></textarea></label><div class="card-header reaction-role-heading"><div><h3>Tepki ve rol eşleştirmeleri</h3><p class="muted tiny">Her tepki ve rol bu mesajda yalnızca bir kez kullanılabilir.</p></div><button type="button" id="add-reaction-role" class="button subtle">+ Eşleştirme ekle</button></div><div id="reaction-role-mappings" class="reaction-role-mappings">${reactionRoleRow()}</div><div class="hint">Bot rolünü verilecek rollerin üstünde tutun. Botun kanalda Mesajları Görüntüle, Mesaj Gönder, Mesaj Geçmişini Oku ve Tepki Ekle izinleri bulunmalıdır.</div><div class="form-actions"><button class="button primary" type="submit">Discord’da yayımla</button></div></form><section class="card"><div class="card-header"><div><h3>Discord önizlemesi</h3><p class="muted tiny">Gerçek mesaj, seçtiğiniz tepkilerle birlikte yayımlanır.</p></div></div><div id="reaction-role-preview" class="discord-preview"></div></section><section class="card wide"><div class="card-header"><div><h3>Yayımlanmış rol mesajları</h3><p class="muted tiny">Bir yayını kaldırmak Discord mesajını ve panel kaydını birlikte siler.</p></div><span id="reaction-role-count" class="badge">${state.reactionRoleRecords.length} yayın</span></div><div id="reaction-roles-records">Yükleniyor…</div></section></div>`;
+}
 const toggle = (id, title, description, enabled) => `<div class="switch-row"><div><label for="${id}">${title}</label><p>${description}</p></div><input type="checkbox" id="${id}" ${check(enabled)}></div>`;
 const empty = message => `<div class="empty"><span class="empty-symbol" aria-hidden="true">◇</span>${escape(message)}</div>`;
 
@@ -106,6 +125,7 @@ function renderOverview() {
   const { settings: s, bot, memberCount, music } = state.guild;
   const modules = [
     ['↗', 'Otomatik roller', 'Yeni üyelere seçtiğin tüm rolleri ver.', s.autoRoleEnabled],
+    ['☺', 'Emoji ile rol verme', `${state.guild.reactionRoleCount || 0} rol mesajı yayında.`, (state.guild.reactionRoleCount || 0) > 0],
     ['↙', 'Ayrılma mesajları', 'Ayrılan üyeleri seçtiğin kanala bildir.', s.leaveEnabled],
     ['⌘', 'Otomatik cevaplar', `${s.responses.length} özel ! komutu hazır.`, s.responderEnabled],
     ['♫', 'Müzik istasyonu', 'YouTube Music ve Spotify bağlantıları.', s.musicEnabled],
@@ -177,14 +197,14 @@ function updateBoostedProgress() {
 }
 
 function settingsLinks() {
-  const cards = [['community','Üyeler ve roller','Otomatik roller ve ayrılma mesajları'],['responders','Otomatik cevaplar','! komutlarına verilen yanıtlar'],['protection','Spam ve oltalama','Koruma eşikleri ve alan adları'],['blacklist','Üye kara listesi','Ayrılan ve elle eklenen üyeler'],['tickets','Destek ve savunma','Bilet ve özel savunma odaları'],['tools','Hatırlatıcı ve sağlık','Sağlık asistanı ayarları'],['faq','Sık sorulan sorular','SSS yayını ve içerikleri'],['music','Müzik istasyonu','Müzik ayarları ve oynatıcı'],['access','Yetkilendirme','Panel ve müzik erişimleri']];
+  const cards = [['community','Üyeler ve roller','Otomatik roller ve ayrılma mesajları'],['reactionRoles','Emoji ile rol verme','Tepki ve rol eşleştirmeleri'],['responders','Otomatik cevaplar','! komutlarına verilen yanıtlar'],['protection','Spam ve oltalama','Koruma eşikleri ve alan adları'],['blacklist','Üye kara listesi','Ayrılan ve elle eklenen üyeler'],['tickets','Destek ve savunma','Bilet ve özel savunma odaları'],['tools','Hatırlatıcı ve sağlık','Sağlık asistanı ayarları'],['faq','Sık sorulan sorular','SSS yayını ve içerikleri'],['music','Müzik istasyonu','Müzik ayarları ve oynatıcı'],['access','Yetkilendirme','Panel ve müzik erişimleri']];
   return `<section class="card wide"><div class="card-header"><div><h3>Bağımsız ayar sayfaları</h3><p class="muted tiny">Her ayar yalnızca ait olduğu sayfadan değiştirilir.</p></div></div><div class="settings-links">${cards.map(([view,title,text]) => `<button type="button" class="summary-link" data-go="${view}"><strong>${title}</strong><span>${text}</span><b>→</b></button>`).join('')}</div></section>`;
 }
 
 function renderSettingsBase() {
   const s = state.guild.settings, perms = state.guild.bot.permissions;
   const commands = [['/panel-giris', 'Tek kullanımlık güvenli panel giriş kodu üret.'], ['/hatırlat · /hatırlatıcılar', 'Kişisel hatırlatma oluştur, listele veya iptal et.'], ['/healthcare', 'Mola hatırlatmalarına katıl veya kapat.'], ['/bilet-kapat', 'Destek biletini kapat.'], ['/uyar · /savunma-yanıt', 'Üyeyi uyar veya özel savunmaya yanıt ver.'], ['/yardim', 'Tüm komutları ve kullanımını göster.'], ['/clear · /temizle', 'Adet verilmezse tüm kanalı, verilirse son 1–100 mesajı temizle.'], ['/play · /pause · /skip · /stop', 'Müzik istasyonunu yönet.']];
-  const active = [['Otomatik rol',s.autoRoleEnabled],['Ayrılma mesajı',s.leaveEnabled],['Otomatik cevap',s.responderEnabled],['Müzik',s.musicEnabled],['Spam',s.antiSpamEnabled],['Oltalama',s.antiPhishingEnabled],['Bilet',s.ticketEnabled],['Savunma',s.defenseEnabled],['Sağlık',s.healthEnabled],['Boosted Event',s.boostedEventEnabled],['SSS',s.faqEnabled]];
+  const active = [['Otomatik rol',s.autoRoleEnabled],['Emoji ile rol',state.guild.reactionRoleCount > 0],['Ayrılma mesajı',s.leaveEnabled],['Otomatik cevap',s.responderEnabled],['Müzik',s.musicEnabled],['Spam',s.antiSpamEnabled],['Oltalama',s.antiPhishingEnabled],['Bilet',s.ticketEnabled],['Savunma',s.defenseEnabled],['Sağlık',s.healthEnabled],['Boosted Event',s.boostedEventEnabled],['SSS',s.faqEnabled]];
   const guildOptions = state.guilds.map(guild => `<option value="${escape(guild.id)}" ${guild.id === state.guild.id ? 'selected' : ''}>${escape(guild.name)}</option>`).join('');
   return `<div class="grid-2 settings-grid">
     <section class="card form-stack"><div><h3>Yönetilen Discord sunucusu</h3><p class="muted tiny">Panelde ayarlarını değiştirmek istediğiniz sunucuyu seçin.</p></div><label for="guild-select">Sunucu<select id="guild-select">${guildOptions}</select></label></section>
@@ -273,19 +293,20 @@ function render() {
   $('#view-title').textContent = titles[state.view];
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  const page = ({ overview: renderOverview, community: renderCommunity, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
+  const page = ({ overview: renderOverview, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
   $('#view-content').innerHTML = page.replaceAll('/sağlık-asistanı', '/healthcare');
   applyOverviewHeight();
-  if (['blacklist', 'tickets', 'tools', 'faq', 'access', 'settings'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
+  if (['blacklist', 'tickets', 'tools', 'faq', 'reactionRoles', 'access', 'settings'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
   if (state.view === 'overview') void loadLogs(false, true).catch(error => notice(error.message, true));
   if (state.view === 'logs') void loadLogs().catch(error => notice(error.message, true));
   if ($('#leave-preview')) updateLeavePreview();
   if (state.view === 'crew') void loadCrew().catch(error => notice(error.message, true));
   if (state.view === 'boosted') updateBoostedProgress();
+  if (state.view === 'reactionRoles') updateReactionRolePreview();
 }
 async function loadGuild(guildId) {
   const version = ++guildLoadVersion;
-  state.guild = null; state.panelAccess = null;
+  state.guild = null; state.panelAccess = null; state.reactionRoleRecords = [];
   $('#view-content').innerHTML = '<div class="loading">Sunucu bilgileri yükleniyor…</div>';
   const guild = await api(`/api/guilds/${guildId}`);
   if (version !== guildLoadVersion) return;
@@ -348,6 +369,8 @@ document.addEventListener('click', async event => {
     if (button.id === 'logout') { await api('/auth/logout', { method: 'POST', body: '{}' }); location.reload(); }
     if (button.id === 'add-response') { if ($$('.response-row').length >= 50) throw new Error('En fazla 50 otomatik cevap ekleyebilirsiniz.'); $('#responses').insertAdjacentHTML('beforeend', responseRow()); $('#responses-empty').hidden = true; state.dirty = true; $('#responses').lastElementChild.querySelector('input').focus(); }
     if (button.classList.contains('remove-response')) { button.closest('.response-row').remove(); $('#responses-empty').hidden = Boolean($$('.response-row').length); state.dirty = true; }
+    if (button.id === 'add-reaction-role') { if ($$('.reaction-role-row').length >= 20) throw new Error('En fazla 20 emoji ve rol eşleştirmesi ekleyebilirsiniz.'); $('#reaction-role-mappings').insertAdjacentHTML('beforeend', reactionRoleRow()); state.dirty = true; updateReactionRolePreview(); }
+    if (button.classList.contains('remove-reaction-role')) { button.closest('.reaction-role-row').remove(); state.dirty = true; updateReactionRolePreview(); }
     if (button.id === 'reload-logs') await loadLogs();
     if (button.hasAttribute('data-crew-sort')) { const key = button.dataset.crewSort; state.crewSort = { key, direction: state.crewSort.key === key ? (state.crewSort.direction === 'desc' ? 'asc' : 'desc') : (key === 'name' ? 'asc' : 'desc') }; $('#crew-content').innerHTML = crewBody(state.guild.crew); return; }
     if (button.id === 'refresh-crew') { button.disabled = true; await loadCrew(true); notice('Ekip REP ve profil bilgileri güncellendi.'); }
@@ -389,12 +412,14 @@ document.addEventListener('input', event => {
   if (['records-search', 'log-search'].includes(event.target.id)) { const query = event.target.value.normalize('NFKC').toLocaleLowerCase('tr-TR').trim(); const container = event.target.id === 'log-search' ? $('#log-table') : $('#faqs-records'); $$('tbody tr', container).forEach(row => { row.hidden = Boolean(query && !row.textContent.normalize('NFKC').toLocaleLowerCase('tr-TR').includes(query)); }); }
   if (event.target.id === 'response-search') { const query = event.target.value.normalize('NFKC').toLocaleLowerCase('tr-TR').trim(); $$('.response-row').forEach(row => { row.hidden = Boolean(query && !row.textContent.normalize('NFKC').toLocaleLowerCase('tr-TR').includes(query) && !$$('input,textarea', row).some(field => field.value.normalize('NFKC').toLocaleLowerCase('tr-TR').includes(query))); }); }
   if (event.target.id === 'crew-search') { const query = event.target.value.normalize('NFKC').toLocaleLowerCase('tr-TR').trim(); $$('#crew-content tbody tr').forEach(row => { row.hidden = Boolean(query && !row.textContent.normalize('NFKC').toLocaleLowerCase('tr-TR').includes(query)); }); }
+  if (event.target.closest('#reaction-role-form')) updateReactionRolePreview();
   if (event.target.classList.contains('record-filter')) { const query = event.target.value.normalize('NFKC').toLocaleLowerCase('tr-TR').trim(); $$('tbody tr', event.target.closest('.card')).forEach(row => { row.hidden = Boolean(query && !row.textContent.normalize('NFKC').toLocaleLowerCase('tr-TR').includes(query)); }); }
 });
 document.addEventListener('change', async event => {
   try {
     if (event.target.id === 'guild-select') { const old = state.guild?.id; if (state.dirty && !confirm('Kaydedilmemiş değişikliklerden vazgeçmek istiyor musunuz?')) { event.target.value = old; return; } await loadGuild(event.target.value); notice(''); }
     if (event.target.id === 'log-type') await loadLogs();
+    if (event.target.closest('#reaction-role-form')) updateReactionRolePreview();
   } catch (error) { notice(error.message, true); }
 });
 document.addEventListener('submit', async event => {
@@ -417,6 +442,11 @@ document.addEventListener('submit', async event => {
     if (form.id === 'panel-access-form') { await saveSettings({ panelAccessRoleIds: selectedRoles('panel-access-roles'), panelSessionHours: Number($('#panel-session-hours').value), panelCodeMinutes: Number($('#panel-code-minutes').value) }); state.panelAccess = await guildApi('panel-access'); render(); }
     if (form.id === 'install-form') { await guildApi('access', { method: 'PUT', body: JSON.stringify({ guildIds: $('#allowed-guilds').value.split(/\s+/).filter(Boolean) }) }); state.dirty = false; notice('İzin verilen sunucular kaydedildi.'); }
     if (form.id === 'responders-form') await saveSettings({ responderEnabled: $('#responder-enabled').checked, responses: $$('.response-row').map(row => ({ trigger: $('[name="trigger"]', row).value.trim().replace(/^!+/u, ''), reply: $('[name="reply"]', row).value.trim() })) });
+    if (form.id === 'reaction-role-form') {
+      const mappings = $$('.reaction-role-row').map(row => ({ emoji: $('[name="reaction-emoji"]', row).value, roleId: $('[name="reaction-role"]', row).value }));
+      await guildApi('reaction-roles', { method: 'POST', body: JSON.stringify({ channelId: $('#reaction-role-channel').value, content: $('#reaction-role-content').value.trim(), mappings }) });
+      state.dirty = false; state.guild.reactionRoleCount = Number(state.guild.reactionRoleCount || 0) + 1; await loadReactionRoleRecords(); render(); notice('Emoji ile rol mesajı Discord kanalına yayımlandı.');
+    }
     if (form.id === 'music-settings-form') await saveSettings({ musicEnabled: $('#music-enabled').checked, musicVolume: Number($('#default-volume').value), djRoleId: $('#dj-role').value || null });
     if (form.id === 'settings-form') await saveSettings({ logChannelId: $('#log-channel').value || null });
     if (form.id === 'appearance-form') {
@@ -439,7 +469,7 @@ document.addEventListener('submit', async event => {
 });
 window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
 
-Object.assign(logTypeNames, { 'panel.login': 'Panel girişi', 'settings.detail': 'Ayar ayrıntısı', 'discord.audit': 'Discord yetkili işlemi', 'blacklist.updated': 'Kara liste', 'protection.phishing': 'Oltalama engellendi', 'protection.spam': 'Spam engellendi', 'reminder.created': 'Hatırlatıcı oluşturuldu', 'reminder.sent': 'Hatırlatıcı gönderildi', 'reminder.failed': 'Hatırlatıcı hatası', 'health.sent': 'Mola hatırlatması', 'ticket.opened': 'Destek açıldı', 'ticket.closed': 'Destek kapandı', 'ticket.deleted': 'Destek kanalı silindi', 'defense.opened': 'Savunma odası açıldı', 'defense.reply': 'Üye savunması', 'defense.staff_reply': 'Yetkili yanıtı', 'conversation.message': 'Özel oda mesajı', 'moderation.warning': 'Üye uyarıldı', 'access.updated': 'Kurulum yetkisi', 'faq.published': 'SSS yayımlandı', 'faq.updated': 'SSS düzenlendi', 'faq.deleted': 'SSS kaydı kaldırıldı', 'boosted.announced': 'Boosted Event duyurusu' });
+Object.assign(logTypeNames, { 'panel.login': 'Panel girişi', 'settings.detail': 'Ayar ayrıntısı', 'discord.audit': 'Discord yetkili işlemi', 'blacklist.updated': 'Kara liste', 'protection.phishing': 'Oltalama engellendi', 'protection.spam': 'Spam engellendi', 'reminder.created': 'Hatırlatıcı oluşturuldu', 'reminder.sent': 'Hatırlatıcı gönderildi', 'reminder.failed': 'Hatırlatıcı hatası', 'health.sent': 'Mola hatırlatması', 'ticket.opened': 'Destek açıldı', 'ticket.closed': 'Destek kapandı', 'ticket.deleted': 'Destek kanalı silindi', 'defense.opened': 'Savunma odası açıldı', 'defense.reply': 'Üye savunması', 'defense.staff_reply': 'Yetkili yanıtı', 'conversation.message': 'Özel oda mesajı', 'moderation.warning': 'Üye uyarıldı', 'access.updated': 'Kurulum yetkisi', 'faq.published': 'SSS yayımlandı', 'faq.updated': 'SSS düzenlendi', 'faq.deleted': 'SSS kaydı kaldırıldı', 'boosted.announced': 'Boosted Event duyurusu', 'reaction_role.published': 'Emoji rolü yayımlandı', 'reaction_role.deleted': 'Emoji rolü kaldırıldı', 'reaction_role.assigned': 'Emoji rolü verildi', 'reaction_role.removed': 'Emoji rolü geri alındı', 'reaction_role.error': 'Emoji rolü hatası' });
 function renderBlacklist(settingsOnly = false) {
   const settings = `<form id="blacklist-settings" class="card form-stack">${toggle('blacklist-on-leave', 'Ayrılan üyeyi kara listeye ekle', 'Kayıt tutulur; kişiyi otomatik yasaklamaz. Yeniden katılırsa kayıt korunur.', state.guild.settings.blacklistOnLeave)}<div class="form-actions"><button class="button primary">Ayarı kaydet</button></div></form>`;
   if (settingsOnly) return settings;
@@ -485,8 +515,22 @@ function featureActions(resource, item) {
   if (item.status === 'open' || (resource === 'reminders' && item.userId === state.me.user.id && item.status === 'pending')) return `<button class="button danger" data-resource="${resource}" data-remove-record="${escape(item.id)}">Kapat / iptal et</button>`;
   return escape(item.status);
 }
+function reactionRoleRecordsTable(items) {
+  return items.length ? `<div class="table-wrap"><table><thead><tr><th>KANAL VE MESAJ</th><th>TEPKİ → ROL</th><th>YAYIMLAYAN</th><th>İŞLEM</th></tr></thead><tbody>${items.map(item => `<tr><td data-label="KANAL VE MESAJ"><strong>#${escape(item.channelName || item.channelId)}</strong><p>${escape(item.content)}</p><a href="https://discord.com/channels/${state.guild.id}/${escape(item.channelId)}/${escape(item.id)}" target="_blank" rel="noopener noreferrer">Discord mesajını aç ↗</a></td><td data-label="TEPKİ → ROL"><div class="reaction-record-list">${(item.mappings || []).map(mapping => `<span><b>${escape(mapping.label)}</b> → ${escape(mapping.roleName || mapping.roleId)}</span>`).join('')}</div></td><td data-label="YAYIMLAYAN">${escape(item.createdByName || item.createdBy)}<small class="muted">${date(item.createdAt)}</small></td><td data-label="İŞLEM"><button class="button danger" data-resource="reaction-roles" data-remove-record="${escape(item.id)}">Yayını kaldır</button></td></tr>`).join('')}</tbody></table></div>` : empty('Henüz yayımlanmış bir emoji rolü mesajı yok.');
+}
+async function loadReactionRoleRecords() {
+  const guildId = state.guild.id;
+  const items = await guildApi('reaction-roles');
+  if (state.guild?.id !== guildId) return;
+  state.reactionRoleRecords = items;
+  state.guild.reactionRoleCount = items.length;
+  const node = $('#reaction-roles-records');
+  if (node) node.innerHTML = reactionRoleRecordsTable(items);
+  if ($('#reaction-role-count')) $('#reaction-role-count').textContent = `${items.length} yayın`;
+}
 async function loadFeatureRecords() {
   const guildId = state.guild.id, view = state.view;
+  if (view === 'reactionRoles') { await loadReactionRoleRecords(); return; }
   if (view === 'access') { if (state.panelAccess) return; state.panelAccess = await guildApi('panel-access'); if (state.guild?.id === guildId && state.view === view) { const scroll = window.scrollY; render(); window.scrollTo(0, scroll); } return; }
   if (view === 'settings') { if (state.me.installationOwner) { const access = await guildApi('access'); if (state.guild?.id === guildId && $('#allowed-guilds')) $('#allowed-guilds').value = access.guildIds.join('\n'); } return; }
   for (const resource of view === 'blacklist' ? ['blacklist'] : view === 'tickets' ? ['tickets', 'cases'] : view === 'faq' ? ['faqs'] : ['reminders']) {

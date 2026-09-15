@@ -341,12 +341,12 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
       if (!resource && request.method === 'GET') {
-        await Promise.all([guild.channels.fetch(), guild.roles.fetch()]);
+        await Promise.all([guild.channels.fetch(), guild.roles.fetch(), guild.emojis?.fetch?.() || Promise.resolve()]);
         const me = guild.members.me;
         const botPermissions = me?.permissions;
         if (!session.seenGuilds?.has(guildId)) {
@@ -357,6 +357,8 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           id: guild.id, name: guild.name, icon: guild.iconURL(), memberCount: guild.memberCount,
           channels: [...guild.channels.cache.values()].filter(channel => [ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildCategory].includes(channel.type) && channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)).map(channel => ({ id: channel.id, name: channel.name, type: channel.type })),
           roles: [...guild.roles.cache.values()].filter(role => role.id !== guild.id).sort((a, b) => b.position - a.position).map(role => ({ id: role.id, name: role.name, color: role.hexColor, assignable: role.editable && !role.managed && member.permissions.has(PermissionFlagsBits.ManageRoles) && (member.id === guild.ownerId || member.roles.highest.comparePositionTo(role) > 0) })),
+          emojis: guild.emojis ? [...guild.emojis.cache.values()].filter(emoji => emoji.available !== false).map(emoji => ({ id: emoji.id, name: emoji.name, animated: emoji.animated || false })) : [],
+          reactionRoleCount: store.listRecords(guildId, 'reaction_role', 500).length,
           settings: store.getSettings(guildId), music: music.getStatus(guildId),
           boostedEvent: boostedEvents?.getStatus(guildId) || null,
           protection: features?.protectionStatus(), presenceEnabled: config.presenceEnabled || false,
@@ -401,6 +403,77 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       if (resource === 'boosted-event' && ['GET', 'POST'].includes(request.method)) {
         if (!boostedEvents) throw httpError(503, 'Boosted Event izleyicisi kullanılamıyor.');
         json(response, 200, request.method === 'POST' ? await boostedEvents.refresh(guildId, true) : boostedEvents.getStatus(guildId)); return;
+      }
+      if (resource === 'reaction-roles') {
+        if (request.method === 'GET') { json(response, 200, store.listRecords(guildId, 'reaction_role', 500)); return; }
+        const body = await readJson(request);
+        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) throw httpError(403, 'Emoji ile rol vermeyi yönetmek için Rolleri Yönet izni gerekli.');
+        if (request.method === 'POST') {
+          if (typeof body.channelId !== 'string' || !/^\d{17,20}$/u.test(body.channelId)) throw httpError(400, 'Bir yayın kanalı seçin.');
+          if (typeof body.content !== 'string' || !body.content.trim() || body.content.length > 1800) throw httpError(400, 'Mesaj 1–1800 karakter arasında olmalı.');
+          if (!Array.isArray(body.mappings) || body.mappings.length < 1 || body.mappings.length > 20) throw httpError(400, '1–20 emoji ve rol eşleştirmesi ekleyin.');
+          const channel = await guild.channels.fetch(body.channelId).catch(() => null);
+          const requiredBotPermissions = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AddReactions, PermissionFlagsBits.ManageRoles];
+          if (!channel || channel.guildId !== guild.id || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)
+            || !channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)
+            || !channel.permissionsFor(guild.members.me)?.has(requiredBotPermissions)) {
+            throw httpError(400, 'Seçilen kanalda botun mesaj okuma, gönderme, tepki ekleme ve rol yönetme izinleri olmalı.');
+          }
+
+          const seen = new Set(), seenRoles = new Set();
+          const segmenter = new Intl.Segmenter('tr', { granularity: 'grapheme' });
+          const mappings = [];
+          for (const raw of body.mappings) {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.emoji !== 'string' || typeof raw.roleId !== 'string') throw httpError(400, 'Her satırda geçerli bir emoji ve rol seçin.');
+            const role = await guild.roles.fetch(raw.roleId).catch(() => null);
+            if (!role || role.id === guild.id || role.managed || !role.editable || (member.id !== guild.ownerId && member.roles.highest.comparePositionTo(role) <= 0)) {
+              throw httpError(400, 'Seçilen roller sizin ve botun yönetebileceği roller olmalı.');
+            }
+            if (seenRoles.has(role.id)) throw httpError(400, 'Aynı rol bir mesajda yalnızca bir tepkiye bağlanabilir.');
+            seenRoles.add(role.id);
+            let mapping;
+            if (raw.emoji.startsWith('custom:')) {
+              const id = raw.emoji.slice(7);
+              if (!/^\d{17,20}$/u.test(id)) throw httpError(400, 'Geçersiz sunucu emojisi.');
+              const emoji = guild.emojis?.cache.get(id) || await guild.emojis?.fetch?.(id).catch(() => null);
+              if (!emoji || emoji.guild?.id && emoji.guild.id !== guild.id || emoji.available === false) throw httpError(400, 'Seçilen sunucu emojisi kullanılamıyor.');
+              mapping = { key: `custom:${emoji.id}`, label: `:${emoji.name}:`, reaction: emoji.id, emojiId: emoji.id, emojiName: emoji.name, animated: emoji.animated || false, roleId: role.id, roleName: role.name };
+            } else if (raw.emoji.startsWith('unicode:')) {
+              const emoji = raw.emoji.slice(8).trim();
+              if (!emoji || emoji.length > 32 || [...segmenter.segment(emoji)].length !== 1 || /^[\p{L}\p{N}]$/u.test(emoji)) throw httpError(400, 'Geçerli bir emoji seçin.');
+              mapping = { key: `unicode:${emoji}`, label: emoji, reaction: emoji, emoji: emoji, roleId: role.id, roleName: role.name };
+            } else throw httpError(400, 'Listeden bir emoji seçin.');
+            if (seen.has(mapping.key)) throw httpError(400, 'Aynı emoji bir mesajda yalnızca bir role bağlanabilir.');
+            seen.add(mapping.key);
+            mappings.push(mapping);
+          }
+
+          let sent;
+          try {
+            sent = await channel.send({ content: body.content.trim(), allowedMentions: { parse: [] } });
+            for (const mapping of mappings) await sent.react(mapping.reaction);
+          } catch (error) {
+            if (sent) await sent.delete().catch(() => {});
+            logger('warn', 'reaction_role_publish_failed', safeError(error));
+            throw httpError(409, 'Mesaj veya tepkiler yayımlanamadı. Bot izinlerini ve emojileri kontrol edin.');
+          }
+          const record = { channelId: channel.id, channelName: channel.name, content: body.content.trim(), mappings, createdAt: Date.now(), createdBy: session.user.id, createdByName: session.user.name };
+          store.putRecord(guildId, 'reaction_role', sent.id, record);
+          store.addLog(guildId, { type: 'reaction_role.published', actorId: session.user.id, message: `${session.user.name} emoji ile rol mesajı yayımladı.`, details: { actorName: session.user.name, channelId: channel.id, messageId: sent.id, mappings: mappings.map(item => ({ emoji: item.label, roleId: item.roleId, roleName: item.roleName })) } });
+          json(response, 200, store.getRecord(guildId, 'reaction_role', sent.id)); return;
+        }
+        if (request.method === 'DELETE') {
+          if (typeof body.id !== 'string' || !body.id) throw httpError(400, 'Yayın kimliği gerekli.');
+          const item = store.getRecord(guildId, 'reaction_role', body.id);
+          if (!item) throw httpError(404, 'Emoji rolü yayını bulunamadı.');
+          const channel = await guild.channels.fetch(item.channelId).catch(() => null);
+          const message = await channel?.messages?.fetch(body.id).catch(() => null);
+          if (message) await message.delete().catch(() => { throw httpError(409, 'Discord mesajı silinemedi. Bot izinlerini kontrol edin.'); });
+          store.deleteRecord(guildId, 'reaction_role', body.id);
+          store.addLog(guildId, { type: 'reaction_role.deleted', actorId: session.user.id, message: `${session.user.name} emoji ile rol yayınını kaldırdı.`, details: { actorName: session.user.name, channelId: item.channelId, messageId: body.id } });
+          json(response, 200, { ok: true }); return;
+        }
+        throw httpError(405, 'Geçersiz emoji rolü işlemi.');
       }
       if (resource === 'faqs') {
         if (request.method === 'GET') { json(response, 200, store.listRecords(guildId, 'faq', 500)); return; }

@@ -15,11 +15,12 @@ const OTHER_GUILD = '1400000000000000005';
 const PUBLIC_ORIGIN = 'https://pit-stop.example';
 const SECRETS = ['BOT_TOKEN_TEST_abc', 'OAUTH_SECRET_TEST_abc', 'SESSION_SECRET_TEST_abcdefghijklmnopqrstuvwxyz', 'ACCESS_TOKEN_TEST_abc'];
 const adminPermissions = PermissionFlagsBits.ManageGuild | PermissionFlagsBits.ManageRoles
-  | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.SendMessages | PermissionFlagsBits.EmbedLinks | PermissionFlagsBits.ManageChannels;
+  | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.SendMessages | PermissionFlagsBits.ReadMessageHistory
+  | PermissionFlagsBits.AddReactions | PermissionFlagsBits.EmbedLinks | PermissionFlagsBits.ManageChannels;
 
 async function setup(t, configOverrides = {}) {
   const store = createStore(':memory:');
-  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [], crew: [], ticketCloses: [], ticketDeletes: [] };
+  const calls = { discord: [], music: [], settings: [], memberFetches: [], diagnostics: [], crew: [], ticketCloses: [], ticketDeletes: [], reactionMessages: [], reactions: [] };
   const member = {
     id: USER, permissions: new PermissionsBitField(adminPermissions),
     user: { id: USER, username: 'pilot', globalName: 'Pilot', avatar: null },
@@ -31,6 +32,12 @@ async function setup(t, configOverrides = {}) {
     id: CHANNEL, guildId: GUILD, name: 'genel', type: ChannelType.GuildText,
     permissionsFor: () => new PermissionsBitField(adminPermissions),
   };
+  const sentMessages = new Collection();
+  channel.send = async payload => {
+    const message = { id: `14000000000000001${sentMessages.size}`, channelId: CHANNEL, payload, react: async emoji => { calls.reactions.push(emoji); }, delete: async () => { sentMessages.delete(message.id); } };
+    sentMessages.set(message.id, message); calls.reactionMessages.push(payload); return message;
+  };
+  channel.messages = { fetch: async id => sentMessages.get(id) };
   const channels = new Collection([[CHANNEL, channel]]);
   const roles = new Collection([[ROLE, role]]);
   const guild = {
@@ -38,6 +45,7 @@ async function setup(t, configOverrides = {}) {
     iconURL: () => null,
     channels: { cache: channels, fetch: async (id) => id ? channels.get(id) : channels },
     roles: { cache: roles, fetch: async (id) => id ? roles.get(id) : roles },
+    emojis: { cache: new Collection(), fetch: async () => new Collection() },
     members: {
       me: botMember,
       fetch: async (options) => { calls.memberFetches.push(options); return member; },
@@ -290,6 +298,26 @@ test('published FAQ records can be edited and update their Discord message', asy
   assert.equal(fixture.store.getRecord(GUILD, 'faq', 'faq-one').question, 'Yeni soru');
   assert.deepEqual(edits, [{ content: '❓ **Yeni soru**\nYeni cevap', allowedMentions: { parse: [] } }]);
   assert.equal(fixture.store.getLogs(GUILD, { type: 'faq.updated' })[0].actorId, USER);
+});
+
+test('panel publishes and removes a guarded emoji role message', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  const headers = { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' };
+  const published = await fixture.request(`/api/guilds/${GUILD}/reaction-roles`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ channelId: CHANNEL, content: 'Rolünüzü seçin.', mappings: [{ emoji: 'unicode:🏁', roleId: ROLE }] }),
+  });
+  assert.equal(published.status, 200);
+  const record = await published.json();
+  assert.equal(record.mappings[0].roleName, 'Üye');
+  assert.deepEqual(fixture.calls.reactionMessages, [{ content: 'Rolünüzü seçin.', allowedMentions: { parse: [] } }]);
+  assert.deepEqual(fixture.calls.reactions, ['🏁']);
+  assert.equal(fixture.store.getRecord(GUILD, 'reaction_role', record.id).createdBy, USER);
+
+  const removed = await fixture.request(`/api/guilds/${GUILD}/reaction-roles`, { method: 'DELETE', headers, body: JSON.stringify({ id: record.id }) });
+  assert.equal(removed.status, 200);
+  assert.equal(fixture.store.getRecord(GUILD, 'reaction_role', record.id), null);
+  assert.deepEqual(fixture.store.getLogs(GUILD, { limit: 10 }).slice(0, 2).map(log => log.type), ['reaction_role.deleted', 'reaction_role.published']);
 });
 
 test('unauthenticated APIs and tampered session cookies are rejected', async (t) => {
