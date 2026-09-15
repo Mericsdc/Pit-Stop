@@ -16,6 +16,7 @@ import { installAuditIdentity } from './audit.js';
 import { createCrewTracker } from './crew.js';
 import { createBoostedEventMonitor } from './boosted-events.js';
 import { installReactionRoles } from './reaction-roles.js';
+import { createRpg } from './rpg.js';
 
 let config;
 try {
@@ -40,7 +41,7 @@ const features = createFeatures(client, store, config, { logger: log });
 const crew = createCrewTracker(store, config, { logger: log });
 const boostedEvents = createBoostedEventMonitor(client, store, config, { logger: log });
 features.install();
-const allCommands = [...commands, ...music.commands, ...features.commands];
+const allCommands = [...commands, ...music.commands, ...features.commands, ...createRpg(store).commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
 const removeReactionRoles = installReactionRoles(client, store, { logger: log });
 const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, config, logger: log });

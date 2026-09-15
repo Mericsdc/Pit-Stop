@@ -13,6 +13,24 @@ Türkçe Discord botu ve Discord ile giriş yapılan yönetim paneli. Node.js 24
 - NightRiderz Crew #1636 için REP, Last login, Events completed ve Driver score listesi; Europe/Istanbul gün başlangıcına göre günlük karşılaştırma.
 - Sunucu başına kalıcı ayarlar, son 30 gün / en fazla 10.000 olay. Otomatik cevap, koruma ve özel oda kayıtları ilgili mesaj içeriğini içerir; bot token’ları loglanmaz.
 
+## Mini RPG ve ekonomi
+
+Her Discord sunucusunun ekonomisi ayrıdır. `/çalış` 30 dakikada bir 50–100 altın,
+`/maden` 15 dakikada bir 25–65 altın verir; %15 olasılıkla nadir kristal 100–180 altın kazandırır.
+`/mağaza` ekipmanları listeler, `/satın-al eşya:...` satın alır; en güçlü kılıç ve zırh otomatik kuşanılır.
+`/profil` bakiye, XP, seviye, envanter ve savaş sonuçlarını gösterir.
+
+`/savaş canavar:...` 5 dakikada bir kullanılabilir. Oyuncu ve canavar d20 atar.
+Oyuncunun zarına kılıç, zırh ve en fazla 10 seviye bonusu eklenir; canavarın zarına
+gücü eklenir. Eşitlikte oyuncu kazanır. Galibiyet altın ve XP verir; yenilgi ödülün
+%20'si kadar mevcut altını götürür, bakiye sıfırın altına düşmez. Ekipman kaybolmaz.
+Seviye `floor(sqrt(XP / 100)) + 1` olarak hesaplanır.
+
+`/sıralama` sunucunun ilk 10 oyuncusunu kanalda paylaşır: XP, ardından galibiyet,
+ardından eldeki altın. Diğer RPG yanıtlarını yalnızca komutu kullanan kişi görür.
+Altın, ekipman ve bekleme süreleri SQLite `feature_records` tablosunda saklanır;
+ayrı migration veya gizli anahtar gerekmez. Satın alma ve ödüller tek transaction ile kaydedilir.
+
 ## Web sitesi ve canlı panel
 
 GitHub Pages adresi: **https://mericsdc.github.io/Pit-Stop/**

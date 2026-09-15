@@ -17,7 +17,8 @@ const { createMusic } = await import('../src/music.js');
 const music = createMusic({}, { getSettings: () => ({}) });
 const { createFeatures } = await import('../src/features.js');
 const names = new Set();
-for (const command of [...commands, ...music.commands, ...createFeatures({}, {}).commands]) {
+const { createRpg } = await import('../src/rpg.js');
+for (const command of [...commands, ...music.commands, ...createFeatures({}, {}).commands, ...createRpg({}).commands]) {
   const payload = command.data.toJSON();
   if (names.has(payload.name)) throw new Error(`Duplicate command: ${payload.name}`);
   names.add(payload.name);

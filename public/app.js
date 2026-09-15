@@ -126,6 +126,7 @@ function renderOverview() {
   const modules = [
     ['↗', 'Otomatik roller', 'Yeni üyelere seçtiğin tüm rolleri ver.', s.autoRoleEnabled],
     ['☺', 'Emoji ile rol verme', `${state.guild.reactionRoleCount || 0} rol mesajı yayında.`, (state.guild.reactionRoleCount || 0) > 0],
+    ['⚔', 'Mini RPG ve ekonomi', '/çalış ve /maden ile kazan, /savaş ile yarış.', true],
     ['↙', 'Ayrılma mesajları', 'Ayrılan üyeleri seçtiğin kanala bildir.', s.leaveEnabled],
     ['⌘', 'Otomatik cevaplar', `${s.responses.length} özel ! komutu hazır.`, s.responderEnabled],
     ['♫', 'Müzik istasyonu', 'YouTube Music ve Spotify bağlantıları.', s.musicEnabled],
@@ -205,6 +206,7 @@ function renderSettingsBase() {
   const s = state.guild.settings, perms = state.guild.bot.permissions;
   const commands = [['/panel-giris', 'Tek kullanımlık güvenli panel giriş kodu üret.'], ['/hatırlat · /hatırlatıcılar', 'Kişisel hatırlatma oluştur, listele veya iptal et.'], ['/healthcare', 'Mola hatırlatmalarına katıl veya kapat.'], ['/bilet-kapat', 'Destek biletini kapat.'], ['/uyar · /savunma-yanıt', 'Üyeyi uyar veya özel savunmaya yanıt ver.'], ['/yardim', 'Tüm komutları ve kullanımını göster.'], ['/clear · /temizle', 'Adet verilmezse tüm kanalı, verilirse son 1–100 mesajı temizle.'], ['/play · /pause · /skip · /stop', 'Müzik istasyonunu yönet.']];
   const active = [['Otomatik rol',s.autoRoleEnabled],['Emoji ile rol',state.guild.reactionRoleCount > 0],['Ayrılma mesajı',s.leaveEnabled],['Otomatik cevap',s.responderEnabled],['Müzik',s.musicEnabled],['Spam',s.antiSpamEnabled],['Oltalama',s.antiPhishingEnabled],['Bilet',s.ticketEnabled],['Savunma',s.defenseEnabled],['Sağlık',s.healthEnabled],['Boosted Event',s.boostedEventEnabled],['SSS',s.faqEnabled]];
+  commands.push(['/çalış · /maden', 'Sanal altın ve XP kazan. Çalışma 30, maden 15 dakikada bir kullanılabilir.'], ['/mağaza · /satın-al · /profil', 'Ekipman satın al ve karakterini görüntüle. En güçlü kılıç ve zırh otomatik kuşanılır.'], ['/savaş · /sıralama', '5 dakikada bir zarla canavar savaşı; sunucu sıralaması XP, galibiyet ve altına göre hesaplanır.']);
   const guildOptions = state.guilds.map(guild => `<option value="${escape(guild.id)}" ${guild.id === state.guild.id ? 'selected' : ''}>${escape(guild.name)}</option>`).join('');
   return `<div class="grid-2 settings-grid">
     <section class="card form-stack"><div><h3>Yönetilen Discord sunucusu</h3><p class="muted tiny">Panelde ayarlarını değiştirmek istediğiniz sunucuyu seçin.</p></div><label for="guild-select">Sunucu<select id="guild-select">${guildOptions}</select></label></section>

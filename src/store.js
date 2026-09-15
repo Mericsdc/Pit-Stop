@@ -272,6 +272,28 @@ export function createStore(path) {
         createdAt: row.created_at,
       }));
     },
+    updateRecord(guildId, kind, id, update) {
+      snowflake(guildId); logType(kind); text(id, 'Kayıt kimliği', 100);
+      database.exec('BEGIN IMMEDIATE');
+      try {
+        const row = database.prepare('SELECT data_json FROM feature_records WHERE guild_id=? AND kind=? AND id=?').get(guildId, kind, id);
+        const next = update(row ? JSON.parse(row.data_json) : null);
+        object(next, 'Kayıt');
+        const json = JSON.stringify(next);
+        if (json.length > 16000) throw new TypeError('Kayıt çok büyük.');
+        database.prepare('INSERT INTO feature_records VALUES (?, ?, ?, ?, ?) ON CONFLICT(guild_id,kind,id) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at').run(guildId, kind, id, json, Date.now());
+        database.exec('COMMIT');
+        return JSON.parse(json);
+      } catch (error) { database.exec('ROLLBACK'); throw error; }
+    },
+    rpgLeaderboard(guildId) {
+      snowflake(guildId);
+      return database.prepare(`SELECT id, data_json FROM feature_records WHERE guild_id=? AND kind='rpg_player'
+        ORDER BY CAST(json_extract(data_json, '$.xp') AS INTEGER) DESC,
+        CAST(json_extract(data_json, '$.wins') AS INTEGER) DESC,
+        CAST(json_extract(data_json, '$.coins') AS INTEGER) DESC, id ASC LIMIT 10`).all(guildId)
+        .map(row => ({ ...JSON.parse(row.data_json), id: row.id }));
+    },
     putRecord(guildId, kind, id, data) {
       snowflake(guildId); logType(kind); text(id, 'Kayıt kimliği', 100); object(data, 'Kayıt');
       const json = JSON.stringify(data);

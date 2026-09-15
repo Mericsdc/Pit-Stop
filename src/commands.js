@@ -101,6 +101,7 @@ export const commands = [
       '**/healthcare durum:aç** — Kişisel mola hatırlatmaları.',
       '**/panel-giris** — Yetkili roller için iki dakikalık, tek kullanımlık panel giriş kodu üretir.',
       '**/uyar**, **/bilet-kapat**, **/savunma-yanıt** — Yetkili destek ve savunma işlemleri.',
+      '**Mini RPG:** **/çalış** ve **/maden** ile altın kazan; **/mağaza** ve **/satın-al** ile ekipman edin. **/savaş** ile canavar kes, **/profil** ve **/sıralama** ile ilerlemeni gör.',
     ].join('\n\n'));
   }),
 
