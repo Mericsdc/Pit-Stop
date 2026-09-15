@@ -21,7 +21,7 @@ let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
 const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
 const defaultNavOrder = Object.values(navGroups).flat();
-const overviewHeightKey = 'pitstop-overview-card-height';
+const overviewHeightKey = 'pitstop-overview-card-height-v2';
 function savedNavOrder() {
   try {
     const value = JSON.parse(localStorage.getItem('pitstop-nav-order') || '[]');
@@ -40,7 +40,7 @@ function pageOrderEditor() {
 }
 function savedOverviewHeight() {
   const value = Number(localStorage.getItem(overviewHeightKey));
-  return Number.isFinite(value) && value >= 280 && value <= 900 ? Math.round(value) : null;
+  return Number.isFinite(value) && value >= 300 && value <= 520 ? Math.round(value) : null;
 }
 function applyOverviewHeight() {
   const height = savedOverviewHeight();
@@ -49,7 +49,7 @@ function applyOverviewHeight() {
 }
 function saveOverviewHeight(card) {
   if (!card || state.view !== 'overview' || !matchMedia('(min-width: 1181px)').matches) return;
-  const height = Math.max(280, Math.min(900, Math.round(card.getBoundingClientRect().height)));
+  const height = Math.max(300, Math.min(520, Math.round(card.getBoundingClientRect().height)));
   localStorage.setItem(overviewHeightKey, String(height));
   $$('.dashboard-resizable').forEach(item => { item.style.height = `${height}px`; });
 }
@@ -206,7 +206,8 @@ function overviewActivityChart(dashboard) {
     const left = index / 23 * 100, top = 14.5 + (1 - Number(item.total || 0) / maximum) * 78.5;
     return `<span class="activity-chart-point" tabindex="0" style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%" aria-label="${escape(item.label)}: ${number(item.messages)} mesaj, ${number(item.commands)} komut"><i></i><b>${escape(item.label)} · ${number(item.messages)} mesaj · ${number(item.commands)} komut</b></span>`;
   }).join('');
-  const labels = series.filter((_, index) => index % 6 === 0 || index === 23).map((item, index, shown) => `<span style="left:${(series.indexOf(item) / 23 * 100).toFixed(2)}%" class="${index === shown.length - 1 ? 'last' : ''}">${escape(item.label)}</span>`).join('');
+  const labelIndices = [0, 6, 12, 18, 23];
+  const labels = labelIndices.map((seriesIndex, index) => `<span style="left:${(seriesIndex / 23 * 100).toFixed(2)}%" class="${index === labelIndices.length - 1 ? 'last' : ''}">${escape(series[seriesIndex].label)}</span>`).join('');
   const change = dashboard.changePercent == null ? 'Karşılaştırma için veri birikiyor' : `${dashboard.changePercent >= 0 ? '+' : ''}${number(dashboard.changePercent)}%`;
   return `<div class="activity-chart" aria-label="Son 24 saat sunucu aktivitesi"><svg viewBox="0 0 1000 220" preserveAspectRatio="none" role="img" aria-hidden="true"><defs><linearGradient id="activity-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--cyan)" stop-opacity=".18"/><stop offset="1" stop-color="var(--cyan)" stop-opacity="0"/></linearGradient></defs><polygon points="0,220 ${points} 1000,220" fill="url(#activity-area)"/><polyline points="${points}" fill="none" stroke="var(--cyan)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/></svg>${dots}<div class="activity-chart-labels">${labels}</div></div><div class="activity-summary"><div><span>En aktif kanal</span><strong>${dashboard.activeChannel ? `#${escape(dashboard.activeChannel.name)}` : 'Henüz ölçülmedi'}</strong></div><div><span>En yoğun saat</span><strong>${dashboard.peakHour ? escape(dashboard.peakHour.label) : 'Henüz ölçülmedi'}</strong></div><div><span>Önceki 24 saate göre</span><strong>${escape(change)}</strong></div></div>`;
 }
