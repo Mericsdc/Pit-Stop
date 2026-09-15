@@ -17,6 +17,7 @@ import { createCrewTracker } from './crew.js';
 import { createBoostedEventMonitor } from './boosted-events.js';
 import { installReactionRoles } from './reaction-roles.js';
 import { createRpg } from './rpg.js';
+import { recordDashboardActivity } from './dashboard-activity.js';
 
 let config;
 try {
@@ -92,8 +93,17 @@ client.once(Events.ClientReady, readyClient => {
   void boostedEvents.initialize().catch(error => log('error', 'boosted_event_initialize_failed', safeError(error)));
 });
 client.on(Events.Raw, payload => music.handleRaw(payload));
+client.on(Events.MessageCreate, message => {
+  if (!message.guildId || message.author?.bot) return;
+  try { recordDashboardActivity(store, { guildId: message.guildId, channelId: message.channelId, kind: 'message' }); }
+  catch (error) { log('error', 'dashboard_message_activity_failed', safeError(error)); }
+});
 client.on(Events.InteractionCreate, createInteractionHandler(allCommands, { logger: log, store }));
 client.on(Events.InteractionCreate, interaction => {
+  if (interaction.guildId && interaction.isChatInputCommand()) {
+    try { recordDashboardActivity(store, { guildId: interaction.guildId, channelId: interaction.channelId, kind: 'command' }); }
+    catch (error) { log('error', 'dashboard_command_activity_failed', safeError(error)); }
+  }
   void rpg.handleInteraction(interaction).catch(error => log('error', 'rpg_interaction_failed', safeError(error)));
 });
 client.on(Events.Error, error => log('error', 'discord_error', safeError(error)));

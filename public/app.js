@@ -40,7 +40,7 @@ function pageOrderEditor() {
 }
 function savedOverviewHeight() {
   const value = Number(localStorage.getItem(overviewHeightKey));
-  return Number.isFinite(value) && value >= 520 && value <= 1800 ? Math.round(value) : null;
+  return Number.isFinite(value) && value >= 280 && value <= 900 ? Math.round(value) : null;
 }
 function applyOverviewHeight() {
   const height = savedOverviewHeight();
@@ -49,7 +49,7 @@ function applyOverviewHeight() {
 }
 function saveOverviewHeight(card) {
   if (!card || state.view !== 'overview' || !matchMedia('(min-width: 1181px)').matches) return;
-  const height = Math.max(520, Math.min(1800, Math.round(card.getBoundingClientRect().height)));
+  const height = Math.max(280, Math.min(900, Math.round(card.getBoundingClientRect().height)));
   localStorage.setItem(overviewHeightKey, String(height));
   $$('.dashboard-resizable').forEach(item => { item.style.height = `${height}px`; });
 }
@@ -155,16 +155,61 @@ function renderOverview() {
     ['?', 'Sık sorulan sorular', 'Hazır cevapları seçilen Discord kanalına yayımla.', s.faqEnabled],
   ];
   const active = modules.filter(([, , , enabled]) => enabled).length;
-  return `<div class="stats">
-    <div class="card stat"><div class="stat-label">Toplam üye <span class="stat-icon">♧</span></div><div class="stat-value">${number(memberCount)}</div><div class="stat-foot">Sunucunun güncel üye sayısı</div></div>
-    <div class="card stat"><div class="stat-label">Bot gecikmesi <span class="stat-icon">ϟ</span></div><div class="stat-value">${number(bot.ping)} <small class="tiny muted">ms</small></div><div class="stat-foot">${bot.ready ? 'Discord bağlantısı aktif' : 'Discord’a bağlanıyor'}</div></div>
-    <div class="card stat"><div class="stat-label">Etkin modüller <span class="stat-icon">⌘</span></div><div class="stat-value">${active}<small class="tiny muted"> / ${modules.length}</small></div><div class="stat-foot">Sunucuna özel otomasyonlar</div></div>
-    <div class="card stat"><div class="stat-label">Çalışma süresi <span class="stat-icon">◷</span></div><div class="stat-value">${uptime(bot.uptime)}</div><div class="stat-foot">Son başlatılmadan bu yana</div></div>
-  </div><div class="grid-2 overview-grid"><section class="card dashboard-resizable" data-dashboard-size><div class="card-header"><h3>Sunucunun pit ekibi</h3><span class="badge">${modules.length} modül</span></div>
-  ${modules.map(([icon, name, description, enabled]) => `<div class="module-row"><div class="module-name"><span class="module-icon" aria-hidden="true">${icon}</span><div><strong>${name}</strong><p>${description}</p></div></div>${badge(enabled)}</div>`).join('')}
-  <div class="quick-actions"><button class="button subtle" data-go="community">Üye ayarlarını düzenle ↗</button></div></section>
-  <section class="card dashboard-resizable" data-dashboard-size><div class="card-header"><h3>${music.current ? 'Şimdi garajda çalıyor' : 'En son garajda çalınan'}</h3>${badge(music.connected, 'Bağlı', 'Beklemede')}</div>${musicCover(music.current || music.lastPlayed)}<div class="now-playing"><h3>${escape((music.current || music.lastPlayed)?.title || 'Henüz bir parça çalmıyor')}</h3><p>${escape((music.current || music.lastPlayed)?.author || 'Ses kanalına katıl, müzik istasyonundan bir parça seç.')}</p></div><div class="quick-actions"><button class="button primary" data-go="music">Müzik istasyonunu aç ♫</button></div></section>
-  <section class="card wide"><div class="card-header"><h3>Son hareketler</h3><button class="button subtle" data-go="logs">Tüm kayıtlar ↗</button></div><div id="recent-logs" class="muted">Kayıtlar yükleniyor…</div></section></div>`;
+  const dashboard = state.guild.dashboard || {};
+  const onlineText = state.guild.presenceEnabled
+    ? `${number(dashboard.onlineCount)} çevrimiçi · ${number(dashboard.offlineCount)} çevrimdışı`
+    : 'Çevrimiçi durumu kullanılamıyor';
+  const issues = [!bot.ready, s.musicEnabled && !music.available].filter(Boolean).length;
+  const track = music.current || music.lastPlayed;
+  const quickActions = [
+    ['♧', 'Üyeleri yönet', 'community'], ['🏁', 'REP yönetimi', 'crew'],
+    ['♫', 'Müzik istasyonu', 'music'], ['≡', 'Olay kayıtları', 'logs'],
+    ['⌘', 'Otomatik cevaplar', 'responders'], ['⚙', 'Bot ayarları', 'settings'],
+  ];
+  return `<div class="overview-v2">
+    <div class="stats overview-stats">
+      <div class="card stat"><div class="stat-label">Toplam üye <span class="stat-icon" aria-hidden="true">♧</span></div><div class="stat-value">${number(memberCount)}</div><div class="stat-foot">${onlineText}</div></div>
+      <div class="card stat"><div class="stat-label">Ses kanalları <span class="stat-icon" aria-hidden="true">◖</span></div><div class="stat-value">${number(dashboard.voiceMemberCount)}</div><div class="stat-foot">${dashboard.activeVoiceChannelCount ? `${number(dashboard.activeVoiceChannelCount)} aktif ses kanalında` : 'Şu anda ses kanallarında kimse yok'}</div></div>
+      <div class="card stat"><div class="stat-label">Bugünkü aktivite <span class="stat-icon" aria-hidden="true">⌁</span></div><div class="stat-value">${number(dashboard.todayMessages)} <small>mesaj</small></div><div class="stat-foot">${number(dashboard.todayCommands)} komut kullanıldı</div></div>
+      <div class="card stat"><div class="stat-label">Bot durumu <span class="status-dot ${bot.ready ? 'online' : ''}" aria-hidden="true"></span></div><div class="stat-value status-value">${bot.ready ? 'Çevrimiçi' : 'Bağlanıyor'}</div><div class="stat-foot">${number(bot.ping)} ms gecikme · ${uptime(bot.uptime)} çalışma</div></div>
+    </div>
+    <div class="overview-primary-grid">
+      <section class="card dashboard-resizable overview-activity-card" data-dashboard-size><div class="card-header"><div><span class="card-kicker">SON 24 SAAT</span><h3>Sunucu aktivitesi</h3></div>${dashboard.hasActivity ? '<span class="badge on">● Canlı veri</span>' : '<span class="badge">Veri birikiyor</span>'}</div>${overviewActivityChart(dashboard)}</section>
+      <section class="card overview-actions-card"><div class="card-header"><div><span class="card-kicker">KISAYOLLAR</span><h3>Hızlı işlemler</h3></div></div><div class="overview-action-list">${quickActions.map(([icon, title, view]) => `<button type="button" data-go="${view}"><span aria-hidden="true">${icon}</span><strong>${title}</strong><b aria-hidden="true">→</b></button>`).join('')}</div></section>
+    </div>
+    <div class="overview-lower-grid">
+      <section class="card overview-recent-card"><div class="card-header"><div><span class="card-kicker">YÖNETİM AKIŞI</span><h3>Son hareketler</h3></div><button class="button subtle" data-go="logs">Tüm kayıtlar →</button></div><div id="recent-logs" class="overview-log-list muted">Kayıtlar yükleniyor…</div></section>
+      <div class="overview-side-stack">
+        <section class="card overview-music-card"><div class="card-header"><div><span class="card-kicker">MÜZİK</span><h3>Şimdi çalıyor</h3></div>${badge(music.connected, 'Bağlı', 'Beklemede')}</div><div class="overview-track">${compactMusicCover(track)}<div class="overview-track-copy"><strong>${escape(track?.title || 'Şu anda müzik çalmıyor')}</strong><span>${escape(track?.author || 'Müzik istasyonundan bir parça seçin.')}</span>${music.current ? `<small>${music.paused ? 'Duraklatıldı' : 'Çalıyor'} · ${duration(music.current.duration)}</small>` : music.lastPlayed ? '<small>En son çalınan parça</small>' : ''}</div></div><div class="overview-music-actions">${music.current ? `<button class="button subtle" data-control="stop">■ Durdur</button><button class="button subtle" data-control="skip">Atla →</button>` : ''}<button class="button subtle" data-go="music">İstasyona git →</button></div></section>
+        <section class="card overview-system-card"><div class="card-header"><div><span class="card-kicker">MODÜLLER</span><h3>Sistem durumu</h3></div><strong>${active} / ${modules.length}</strong></div><div class="system-summary ${issues ? 'warning' : 'healthy'}"><span class="status-dot ${issues ? '' : 'online'}"></span><div><strong>${issues ? `${issues} sistem kontrol edilmeli` : 'Sistemler normal çalışıyor'}</strong><small>${bot.ready ? 'Discord bağlantısı aktif' : 'Discord bağlantısı bekleniyor'}</small></div></div><button class="overview-inline-link" data-go="settings">Modülleri yönet →</button></section>
+      </div>
+    </div>
+  </div>`;
+}
+
+function compactMusicCover(track) {
+  return track?.artworkUrl
+    ? `<img class="overview-track-cover" src="${escape(track.artworkUrl)}" alt="" referrerpolicy="no-referrer" draggable="false">`
+    : '<span class="overview-track-cover overview-track-fallback" aria-hidden="true">♫</span>';
+}
+
+function overviewActivityChart(dashboard) {
+  const series = Array.isArray(dashboard.series) && dashboard.series.length === 24
+    ? dashboard.series : Array.from({ length: 24 }, (_, index) => ({ label: `${String(index).padStart(2, '0')}:00`, messages: 0, commands: 0, total: 0 }));
+  const maximum = Math.max(1, ...series.map(item => Number(item.total || 0)));
+  const points = series.map((item, index) => `${(index / 23 * 1000).toFixed(1)},${(210 - Number(item.total || 0) / maximum * 178).toFixed(1)}`).join(' ');
+  const dots = series.map((item, index) => {
+    const left = index / 23 * 100, top = 14.5 + (1 - Number(item.total || 0) / maximum) * 78.5;
+    return `<span class="activity-chart-point" tabindex="0" style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%" aria-label="${escape(item.label)}: ${number(item.messages)} mesaj, ${number(item.commands)} komut"><i></i><b>${escape(item.label)} · ${number(item.messages)} mesaj · ${number(item.commands)} komut</b></span>`;
+  }).join('');
+  const labels = series.filter((_, index) => index % 6 === 0 || index === 23).map((item, index, shown) => `<span style="left:${(series.indexOf(item) / 23 * 100).toFixed(2)}%" class="${index === shown.length - 1 ? 'last' : ''}">${escape(item.label)}</span>`).join('');
+  const change = dashboard.changePercent == null ? 'Karşılaştırma için veri birikiyor' : `${dashboard.changePercent >= 0 ? '+' : ''}${number(dashboard.changePercent)}%`;
+  return `<div class="activity-chart" aria-label="Son 24 saat sunucu aktivitesi"><svg viewBox="0 0 1000 220" preserveAspectRatio="none" role="img" aria-hidden="true"><defs><linearGradient id="activity-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--cyan)" stop-opacity=".18"/><stop offset="1" stop-color="var(--cyan)" stop-opacity="0"/></linearGradient></defs><polygon points="0,220 ${points} 1000,220" fill="url(#activity-area)"/><polyline points="${points}" fill="none" stroke="var(--cyan)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/></svg>${dots}<div class="activity-chart-labels">${labels}</div></div><div class="activity-summary"><div><span>En aktif kanal</span><strong>${dashboard.activeChannel ? `#${escape(dashboard.activeChannel.name)}` : 'Henüz ölçülmedi'}</strong></div><div><span>En yoğun saat</span><strong>${dashboard.peakHour ? escape(dashboard.peakHour.label) : 'Henüz ölçülmedi'}</strong></div><div><span>Önceki 24 saate göre</span><strong>${escape(change)}</strong></div></div>`;
+}
+
+function overviewLogList(logs) {
+  if (!logs.length) return empty('Henüz olay kaydı yok.');
+  return logs.slice(0, 5).map(log => `<article><time datetime="${new Date(log.createdAt).toISOString()}">${new Date(log.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</time><div><strong>${escape(log.details?.actorName || (log.actorId ? `Kullanıcı ${log.actorId}` : 'Pit-Stop'))}</strong><p>${escape(log.message)}</p></div><span class="log-type-dot" title="${escape(logTypeNames[log.type] || log.type)}"></span></article>`).join('');
 }
 
 function renderRpg() {
@@ -371,7 +416,7 @@ async function loadLogs(append = false, recent = false) {
   if (append && state.logs.length) params.set('before', state.logs.at(-1).id);
   const logs = await guildApi(`logs?${params}`);
   if (state.guild?.id !== guildId) return;
-  if (recent) { if ($('#recent-logs')) $('#recent-logs').innerHTML = logTable(logs.slice(0, 5)); return; }
+  if (recent) { if ($('#recent-logs')) $('#recent-logs').innerHTML = overviewLogList(logs); return; }
   state.logs = append ? [...state.logs, ...logs] : logs;
   if ($('#log-table')) $('#log-table').innerHTML = logTable(state.logs);
   if ($('#more-logs')) $('#more-logs').hidden = logs.length < 50;

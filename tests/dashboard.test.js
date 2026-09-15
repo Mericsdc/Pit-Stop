@@ -396,6 +396,12 @@ test('removing ManageGuild revokes access immediately even with an existing logi
   const session = await fixture.login();
   const first = await fixture.request(`/api/guilds/${GUILD}`, { headers: { Cookie: session.cookie } });
   assert.equal(first.status, 200);
+  const dashboard = (await first.json()).dashboard;
+  assert.equal(dashboard.onlineCount, 0);
+  assert.equal(dashboard.voiceMemberCount, 0);
+  assert.equal(dashboard.todayMessages, 0);
+  assert.equal(dashboard.series.length, 24);
+  assert.equal(dashboard.changePercent, null);
   fixture.member.permissions = new PermissionsBitField(0n);
   const revoked = await fixture.request(`/api/guilds/${GUILD}/logs`, { headers: { Cookie: session.cookie } });
   assert.equal(revoked.status, 403);

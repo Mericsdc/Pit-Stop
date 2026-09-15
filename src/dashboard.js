@@ -6,6 +6,7 @@ import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { safeError } from './logger.js';
 import { rpgDashboard } from './rpg.js';
+import { dashboardActivitySummary } from './dashboard-activity.js';
 
 const random = () => randomBytes(32).toString('base64url');
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -352,13 +353,20 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         await Promise.all([guild.channels.fetch(), guild.roles.fetch(), guild.emojis?.fetch?.() || Promise.resolve()]);
         const me = guild.members.me;
         const botPermissions = me?.permissions;
+        const visibleChannels = [...guild.channels.cache.values()].filter(channel => channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel));
+        const channelNames = new Map(visibleChannels.map(channel => [channel.id, channel.name]));
+        const activity = dashboardActivitySummary(store, guildId, channelNames);
+        const onlineCount = guild.members.cache?.filter?.(item => item.presence?.status && item.presence.status !== 'offline').size || 0;
+        const voiceChannels = visibleChannels.filter(channel => [ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(channel.type));
+        const voiceMemberCount = voiceChannels.reduce((total, channel) => total + Number(channel.members?.size || 0), 0);
+        const activeVoiceChannelCount = voiceChannels.filter(channel => Number(channel.members?.size || 0) > 0).length;
         if (!session.seenGuilds?.has(guildId)) {
           const live = sessions.get(session.id); live.seenGuilds ??= new Set(); live.seenGuilds.add(guildId); saveSession(session.id, live);
           store.addLog(guildId, { type: 'panel.login', actorId: session.user.id, message: `${session.user.name} yönetim paneline giriş yaptı.`, details: { actorName: session.user.name } });
         }
         json(response, 200, {
           id: guild.id, name: guild.name, icon: guild.iconURL(), memberCount: guild.memberCount,
-          channels: [...guild.channels.cache.values()].filter(channel => [ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildCategory].includes(channel.type) && channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)).map(channel => ({ id: channel.id, name: channel.name, type: channel.type })),
+          channels: visibleChannels.filter(channel => [ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildCategory].includes(channel.type)).map(channel => ({ id: channel.id, name: channel.name, type: channel.type })),
           roles: [...guild.roles.cache.values()].filter(role => role.id !== guild.id).sort((a, b) => b.position - a.position).map(role => ({ id: role.id, name: role.name, color: role.hexColor, assignable: role.editable && !role.managed && member.permissions.has(PermissionFlagsBits.ManageRoles) && (member.id === guild.ownerId || member.roles.highest.comparePositionTo(role) > 0) })),
           emojis: guild.emojis ? [...guild.emojis.cache.values()].filter(emoji => emoji.available !== false).map(emoji => ({ id: emoji.id, name: emoji.name, animated: emoji.animated || false })) : [],
           reactionRoleCount: store.listRecords(guildId, 'reaction_role', 500).length,
@@ -366,6 +374,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           boostedEvent: boostedEvents?.getStatus(guildId) || null,
           protection: features?.protectionStatus(), presenceEnabled: config.presenceEnabled || false,
           viewerPermissions: { manageChannels: member.permissions.has(PermissionFlagsBits.ManageChannels) },
+          dashboard: { onlineCount, offlineCount: Math.max(0, guild.memberCount - onlineCount), voiceMemberCount, activeVoiceChannelCount, ...activity },
           bot: { ready: client.isReady(), ping: Math.max(0, Math.round(client.ws.ping)), uptime: Math.round(process.uptime()), permissions: Object.fromEntries(Object.entries({ manageRoles: PermissionFlagsBits.ManageRoles, manageMessages: PermissionFlagsBits.ManageMessages, addReactions: PermissionFlagsBits.AddReactions, connect: PermissionFlagsBits.Connect, speak: PermissionFlagsBits.Speak, moderateMembers: PermissionFlagsBits.ModerateMembers, viewAuditLog: PermissionFlagsBits.ViewAuditLog, manageChannels: PermissionFlagsBits.ManageChannels, createPrivateThreads: PermissionFlagsBits.CreatePrivateThreads, manageThreads: PermissionFlagsBits.ManageThreads }).map(([key, flag]) => [key, botPermissions?.has(flag) || false])) },
         });
         return;
