@@ -1,4 +1,5 @@
 import { staticHosting, livePanelUrl } from './site-config.js';
+import { renderRpgContent } from './rpg-view.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -154,15 +155,9 @@ function renderOverview() {
 }
 
 function renderRpg() {
-  return `<section class="card"><div class="card-header"><div><h3>Garajdan maceraya</h3><p class="muted">Altın kazan, ekipmanını güçlendir ve sunucunun sıralamasında yüksel.</p></div><span class="badge">/rpg-rehber</span></div><p class="muted tiny">Oyun komutlarını Discord’da kullanın. Bu sayfada güncel eşya kataloğunu, canavarları ve ilk 10 oyuncuyu takip edebilirsiniz.</p></section><div id="rpg-content"><div class="loading">RPG bilgileri yükleniyor…</div></div>`;
+  return `<section class="card"><div class="card-header"><div><h3>Garajdan maceraya</h3><p class="muted">Altın kazan, ekipmanını güçlendir ve sunucunun sıralamasında yüksel.</p></div><span class="badge">/rpg-rehber</span></div><p class="muted tiny">Oyun komutlarını Discord’da kullanın. Bu sayfada güncel eşya kataloğunu, canavarları ve ilk 10 oyuncuyu takip edebilirsiniz.</p></section><form id="rpg-settings-form" class="card form-stack"><h3>Başarı duyuruları</h3><p class="muted tiny">Boss zaferleri ve üretilen efsanevi eşyalar seçilen kanalda kutlanır. Kanal seçmezseniz yalnızca olay kayıtlarına yazılır.</p><label>Duyuru kanalı<select id="rpg-announcement-channel">${channelOptions(state.guild.settings.rpgAnnouncementChannelId)}</select></label><div class="form-actions"><button type="submit" class="button primary">Duyuru ayarını kaydet</button></div></form><div id="rpg-content"><div class="loading">RPG bilgileri yükleniyor…</div></div>`;
 }
-function rpgBody(data) {
-  const tiers = ['','Başlangıç','Gelişmiş','Efsanevi'];
-  return `<section class="card rpg-table"><div class="card-header"><div><h3>Oyuncu sıralaması</h3><p class="muted tiny">İlk 10 · XP, ardından galibiyet ve altın · 15 saniyede bir yenilenir.</p></div><span class="muted tiny">Son güncelleme: ${date(data.updatedAt)}</span></div>${data.leaderboard.length ? `<div class="table-wrap"><table><thead><tr><th>SIRA / OYUNCU</th><th>SEVİYE / XP</th><th>ALTIN</th><th>SAVAŞLAR</th><th>EKİPMAN</th></tr></thead><tbody>${data.leaderboard.map(p => `<tr><td data-label="SIRA / OYUNCU"><strong>${number(p.rank)}. ${escape(p.name)}</strong></td><td data-label="SEVİYE / XP">Seviye ${number(p.level)}<small class="muted">${number(p.xp)} XP</small></td><td data-label="ALTIN">${number(p.coins)} altın</td><td data-label="SAVAŞLAR">${number(p.wins)} galibiyet<small class="muted">${number(p.losses)} yenilgi</small></td><td data-label="EKİPMAN">${escape(p.sword || 'Kılıç yok')}<small class="muted">${escape(p.armor || 'Zırh yok')}</small></td></tr>`).join('')}</tbody></table></div>` : empty('Henüz oyuncu yok. Discord’da /çalış veya /maden ile başlayın.')}</section>
-  <section class="card"><div class="card-header"><div><h3>Eşya kataloğu</h3><p class="muted tiny">/satın-al komutuyla satın alınır. En güçlü kılıç ve zırh otomatik kuşanılır.</p></div><span class="badge">${data.items.length} eşya</span></div><div class="rpg-catalog">${data.items.map(item => `<article class="rpg-item"><div class="rpg-item-heading"><span class="module-icon" aria-hidden="true">${item.slot === 'sword' ? '⚔' : '🛡'}</span><div><h3>${escape(item.name)}</h3><span class="muted tiny">${tiers[item.tier] || ''} · ${item.slot === 'sword' ? 'Kılıç' : 'Zırh'}</span></div></div><div class="rpg-item-stats"><strong>${number(item.price)} altın</strong><span class="badge">+${number(item.bonus)} ${item.slot === 'sword' ? 'saldırı' : 'savunma'}</span></div></article>`).join('')}</div></section>
-  <section class="card"><div class="card-header"><div><h3>RPG komutları</h3><p class="muted tiny">Botun güncel RPG komut listesi.</p></div><span class="badge">${data.commands.length} komut</span></div><div class="command-list">${data.commands.map(c => `<article class="command-item"><code>${escape(c.usage)}</code><p>${escape(c.description)}</p></article>`).join('')}</div></section>
-  <section class="card"><div class="card-header"><div><h3>Canavarlar ve ödüller</h3><p class="muted tiny">/savaş ile seçin. Ekipman ve seviye, d20 zarınıza bonus ekler.</p></div></div><div class="rpg-catalog">${data.monsters.map(m => `<article class="rpg-item"><h3>${escape(m.name)}</h3><span class="muted tiny">Canavar gücü: +${number(m.defense)}</span><div class="rpg-item-stats"><strong>${number(m.reward)} altın</strong><span class="badge">${number(m.xp)} XP</span></div></article>`).join('')}</div></section>`;
-}
+function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }); }
 let rpgLoading = false;
 async function loadRpg() {
   if (rpgLoading) return;
@@ -475,6 +470,7 @@ document.addEventListener('submit', async event => {
       state.dirty = false; state.guild.reactionRoleCount = Number(state.guild.reactionRoleCount || 0) + 1; await loadReactionRoleRecords(); render(); notice('Emoji ile rol mesajı Discord kanalına yayımlandı.');
     }
     if (form.id === 'music-settings-form') await saveSettings({ musicEnabled: $('#music-enabled').checked, musicVolume: Number($('#default-volume').value), djRoleId: $('#dj-role').value || null });
+    if (form.id === 'rpg-settings-form') await saveSettings({ rpgAnnouncementChannelId: $('#rpg-announcement-channel').value || null });
     if (form.id === 'settings-form') await saveSettings({ logChannelId: $('#log-channel').value || null });
     if (form.id === 'appearance-form') {
       await saveSettings({ panelLogoUrl: $('#panel-logo-url').value.trim() || null, panelBannerUrl: $('#panel-banner-url').value.trim() || null, panelLoginBackgroundUrl: $('#panel-login-background-url').value.trim() || null });

@@ -175,13 +175,27 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.deepEqual(data.leaderboard.map(p => p.name), ['Champion', 'Pilot']);
   assert.equal(data.leaderboard[0].level, 3);
   assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
-  assert.equal(data.items.length, 6);
+  assert.equal(data.items.length, 17);
   assert.equal(data.monsters.length, 3);
-  assert.equal(data.commands.length, 8);
+  assert.equal(data.commands.length, 24);
+  assert.equal(data.classes.length, 3);
+  assert.equal(data.recipes.length, 4);
+  assert.equal(data.world.timezone, 'Europe/Istanbul');
   assert.ok(data.commands.some(c => c.usage === '/rpg-rehber'));
   assert.ok(!JSON.stringify(data).includes('receipts'));
   assert.ok(!JSON.stringify(data).includes('cooldowns'));
   assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/rpg`, { headers })).status, 403);
+});
+
+test('RPG announcement channel changes use protected settings and validate guild ownership', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  const path = `/api/guilds/${GUILD}/settings`;
+  assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: CHANNEL })).status, 200);
+  assert.equal(fixture.store.getSettings(GUILD).rpgAnnouncementChannelId, CHANNEL);
+  assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: OTHER_GUILD })).status, 400);
+  assert.equal(fixture.store.getSettings(GUILD).rpgAnnouncementChannelId, CHANNEL);
+  assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: null }, { 'X-CSRF-Token': 'wrong' })).status, 403);
+  assert.equal((await fixture.request('/rpg-view.js')).status, 200);
 });
 
 test('OAuth HTTP flow issues protected state/session cookies and attempts silent reuse first', async (t) => {

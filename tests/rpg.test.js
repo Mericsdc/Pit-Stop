@@ -83,8 +83,8 @@ test('balances and cooldowns survive restart; ranking stays guild scoped', () =>
 test('commands serialize and every shop choice matches a server-side item', t => {
   const { rpg } = fixture(t);
   const commands = rpg.commands.map(c => c.data.toJSON());
-  assert.equal(commands.length, 8);
-  assert.deepEqual(commands.find(c => c.name === 'satın-al').options[0].choices.map(c => c.value), RPG_ITEMS.map(i => i.id));
+  assert.equal(commands.length, 24);
+  assert.deepEqual(commands.find(c => c.name === 'satın-al').options[0].choices.map(c => c.value), RPG_ITEMS.filter(i => !i.source).map(i => i.id));
 });
 
 test('RPG guide explains every command privately without creating a player', async t => {

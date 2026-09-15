@@ -41,7 +41,8 @@ const features = createFeatures(client, store, config, { logger: log });
 const crew = createCrewTracker(store, config, { logger: log });
 const boostedEvents = createBoostedEventMonitor(client, store, config, { logger: log });
 features.install();
-const allCommands = [...commands, ...music.commands, ...features.commands, ...createRpg(store).commands];
+const rpg = createRpg(store, { client, logger: log });
+const allCommands = [...commands, ...music.commands, ...features.commands, ...rpg.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
 const removeReactionRoles = installReactionRoles(client, store, { logger: log });
 const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, config, logger: log });
@@ -92,6 +93,9 @@ client.once(Events.ClientReady, readyClient => {
 });
 client.on(Events.Raw, payload => music.handleRaw(payload));
 client.on(Events.InteractionCreate, createInteractionHandler(allCommands, { logger: log, store }));
+client.on(Events.InteractionCreate, interaction => {
+  void rpg.handleInteraction(interaction).catch(error => log('error', 'rpg_interaction_failed', safeError(error)));
+});
 client.on(Events.Error, error => log('error', 'discord_error', safeError(error)));
 client.on(Events.ShardError, error => log('error', 'gateway_error', safeError(error)));
 client.on(Events.ShardDisconnect, (_event, shardId) => log('info', 'gateway_disconnected', { shardId }));

@@ -17,7 +17,7 @@ Türkçe Discord botu ve Discord ile giriş yapılan yönetim paneli. Node.js 24
 
 `/rpg-rehber` başlangıç adımlarını, bütün RPG komutlarını ve savaş kurallarını özel yanıtla açıklar.
 Panelde **Oyun ve topluluk → Mini RPG ve ekonomi** sayfası; çalışan komutları,
-altı ekipmanın fiyat/güç listesini, canavarları ve ilk 10 oyuncuyu gösterir.
+eşya fiyat/güç listesini, sınıfları, üretim tariflerini, canavarları ve ilk 10 oyuncuyu gösterir.
 Sıralama sayfa açıkken 15 saniyede bir yenilenir; oyuncuların kuşandığı kılıç ve zırh da listelenir.
 
 Her Discord sunucusunun ekonomisi ayrıdır. `/çalış` 30 dakikada bir 50–100 altın,
@@ -35,6 +35,43 @@ Seviye `floor(sqrt(XP / 100)) + 1` olarak hesaplanır.
 ardından eldeki altın. Diğer RPG yanıtlarını yalnızca komutu kullanan kişi görür.
 Altın, ekipman ve bekleme süreleri SQLite `feature_records` tablosunda saklanır;
 ayrı migration veya gizli anahtar gerekmez. Satın alma ve ödüller tek transaction ile kaydedilir.
+
+### Sınıflar, sosyal oyun ve üretim (v1.3)
+
+- `/sınıf seçim:...`: Seviye 10'da **kalıcı** Savaşçı, Büyücü veya Okçu seçimi.
+  Savaşçı +3 güç ve `/öfke` (+7), Büyücü +2 ve `/ateş-topu` (+9), Okçu +2 ve `/nişan` (+8) kazanır.
+  Yetenekler 30 dakika, normal savaşla paylaşılan savaş beklemesi 5 dakikadır. Okçu nadir madene +5 şans puanı ekler.
+- `/gönder oyuncu:... altın:...` veya `eşya:...`: aynı sunucudaki bir insana 1–100.000 altın veya tek eşya gönderir.
+  İksirler adetle, ekipmanlar tekil tutulur. Gönderilen kuşanılmış eşyanın yerine kalan en güçlü eşya takılır.
+  Gönderen, alıcı ve işlem kaydı aynı SQLite transaction'ında güncellenir; yetersiz bakiye, kopya veya taşma tüm işlemi geri alır.
+- `/günlük`: 24 saat arayla 100 altın / 25 XP'den başlayıp 7. günde 250 altın / 55 XP'ye ulaşır.
+  48 saati aşan ara seriyi sıfırlar; 7. gün sonrasında ödül sabit kalır.
+- `/düello oyuncu:... altın:...`: 1–500 altınlık davet. Yalnızca rakip kabul veya ret verebilir; 2 dakikada geçersizleşir.
+  Kabulde üyelik, bakiye ve 10 dakikalık ortak düello beklemesi yeniden kontrol edilir. İki d20 ve güncel güç karşılaştırılır;
+  kaybedenin seçilen altını kazanana aktarılır. Eşitlikte altın değişmez. PvP XP üretmez.
+- `/zindan`: Seviye 3'ten itibaren 1 saatte bir. Saldır / İksir İç / Kaç düğmeleri;
+  100 boss canı, 15 dakika veya en fazla 20 tur. Zafer 600 altın, 250 XP ve bir boss parçası verir.
+  %25 nadir kılıç (şans iksiriyle %45); kılıç zaten varsa ek boss parçası verilir.
+  Can her 30 dakikada 10 yenilenir. Zindan sırasında diğer savaş, alışveriş ve transferler engellenir.
+  Tur numarası eski düğmeleri reddeder; aktif savaş ve giriş beklemesi yeniden başlatmada korunur.
+- `/market` ve `/mağaza`: fiyatı görünen seçim menüsünden doğrudan alışveriş.
+  İksirler, iki kazma ve iki balta seviyesi eklenmiştir. Kazma maden gelirini %15/%35, balta çalışma gelirini %15/%30 artırır.
+  `/iksir tür:...`: can iksiri +50 can, şans iksiri 30 dakika nadir maden/boss düşüşüne +20 yüzde puanı verir.
+- `/görev`: 3 Goblin veya faaliyetlerden 500 altın görevi; `ödül` seçeneğiyle bir kez tahsil edilir.
+  İstanbul gece yarısında yenilenir. Gönderilen altın, günlük ödül, düello, görev ödülü ve bahis geliri görev sayacını artırmaz.
+- `/üret`: demir, odun, kristal ve boss parçalarıyla özel kılıç/zırh ve iksir tariflerini gösterir;
+  `tarif` seçilince altın ve malzemeler aynı işlemde harcanır.
+- `/dünya`: sunucu ve tarihe göre sabit oyun havasını gösterir. Gece (20.00–06.00) ve meteor yağmuru
+  nadir maden olasılığını ayrı ayrı +5 puan artırır. Bu gerçek hava durumu servisi değildir.
+- `/karaborsa`: sunucu ve tarihe göre günde iki ayrı bir saatlik aralıkta açılır.
+  Gölge zırhı ve lanetli kılıç satar. Lanetli kılıç %25 ihtimalle PvE saldırısından 10 güç düşürür.
+- `/zar-at altın:...` ve `/bahis altın:...`: aynı 1 dakikalık bekleme, 10–500 sanal altın.
+  d6'da 5–6 (1/3) bahsin iki katını brüt öder; 1–4 bahsi kaybettirir. Altın gerçek para ile alınamaz, bozdurulamaz.
+
+Panelin RPG sayfasından **Başarı duyuruları** kanalı seçilebilir; boss zaferleri ve efsanevi üretimler bu kanala gönderilir.
+Kanal boşsa yalnızca olay kayıtlarında tutulur. Transfer ve düello sonuçları da olay kayıtlarına işlenir.
+Yeni alanlar eski oyuncu kayıtlarına okunurken varsayılanlarla eklenir; mevcut XP, altın, ekipman ve beklemeler korunur.
+Bu sürüm şema değişikliği veya ek environment variable gerektirmez.
 
 ## Web sitesi ve canlı panel
 

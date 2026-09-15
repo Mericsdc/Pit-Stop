@@ -15,6 +15,7 @@ const manageGuild = PermissionFlagsBits.ManageGuild;
 const staticFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/rpg-view.js', ['rpg-view.js', 'text/javascript; charset=utf-8']],
   ['/site-config.js', ['site-config.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/layout.css', ['layout.css', 'text/css; charset=utf-8']],
@@ -52,7 +53,7 @@ async function readJson(request) {
 
 export async function validateGuildSettings(guild, member, patch, existing = {}) {
   if (!patch || Array.isArray(patch) || typeof patch !== 'object') throw httpError(400, 'Ayarlar bir nesne olmalı.');
-  for (const key of ['leaveChannelId', 'logChannelId', 'ticketChannelId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']) {
+  for (const key of ['leaveChannelId', 'logChannelId', 'rpgAnnouncementChannelId', 'ticketChannelId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']) {
     if (!patch[key]) continue;
     const channel = await guild.channels.fetch(patch[key]);
     if (key === 'defenseChannelId' && channel?.type !== ChannelType.GuildText) throw httpError(400, 'Özel savunma thread’leri için normal bir metin kanalı seçin.');

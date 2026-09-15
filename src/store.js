@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   musicVolume: 50,
   djRoleId: null,
   logChannelId: null,
+  rpgAnnouncementChannelId: null,
   boostedEventEnabled: true,
   boostedEventChannelId: null,
   faqEnabled: true,
@@ -43,7 +44,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   panelLoginBackgroundUrl: null,
 });
 const BOOLEAN_KEYS = new Set(['leaveEnabled', 'autoRoleEnabled', 'responderEnabled', 'musicEnabled', 'blacklistOnLeave', 'antiSpamEnabled', 'antiPhishingEnabled', 'ticketEnabled', 'defenseEnabled', 'healthEnabled', 'musicRestricted', 'boostedEventEnabled', 'faqEnabled']);
-const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
+const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'rpgAnnouncementChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function object(value, label) {
@@ -271,6 +272,29 @@ export function createStore(path) {
         details: JSON.parse(row.details_json),
         createdAt: row.created_at,
       }));
+    },
+    transactRecords(guildId, entries, update) {
+      snowflake(guildId);
+      if (!Array.isArray(entries) || !entries.length || entries.length > 10) throw new TypeError('Geçersiz işlem kayıtları.');
+      const keys = new Set();
+      for (const { kind, id } of entries) {
+        logType(kind); text(id, 'Kayıt kimliği', 100);
+        if (keys.has(`${kind}:${id}`)) throw new TypeError('Yinelenen işlem kaydı.');
+        keys.add(`${kind}:${id}`);
+      }
+      database.exec('BEGIN IMMEDIATE');
+      try {
+        const saved = entries.map(({ kind, id }) => {
+          const row = database.prepare('SELECT data_json FROM feature_records WHERE guild_id=? AND kind=? AND id=?').get(guildId, kind, id);
+          return row ? JSON.parse(row.data_json) : null;
+        });
+        const next = update(saved);
+        if (!Array.isArray(next) || next.length !== entries.length) throw new TypeError('Geçersiz işlem sonucu.');
+        const jsons = next.map(value => { object(value, 'Kayıt'); const json = JSON.stringify(value); if (json.length > 16000) throw new TypeError('Kayıt çok büyük.'); return json; });
+        entries.forEach(({ kind, id }, index) => database.prepare('INSERT INTO feature_records VALUES (?, ?, ?, ?, ?) ON CONFLICT(guild_id,kind,id) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at').run(guildId, kind, id, jsons[index], Date.now()));
+        database.exec('COMMIT');
+        return next;
+      } catch (error) { database.exec('ROLLBACK'); throw error; }
     },
     updateRecord(guildId, kind, id, update) {
       snowflake(guildId); logType(kind); text(id, 'Kayıt kimliği', 100);
