@@ -17,7 +17,13 @@ function setup(t,options={}){
 }
 test('legacy players retain balances, equipment and cooldowns while new fields are initialized',t=>{
   const {store,rpg}=setup(t);store.putRecord(G,'rpg_player',a.id,{name:'Old',coins:321,xp:99,wins:2,losses:1,inventory:['demir-kilic'],sword:'demir-kilic',armor:null,cooldowns:{work:9999999999999},receipts:[]});
-  const p=rpg.profile(G,a);assert.equal(p.coins,321);assert.equal(p.sword,'demir-kilic');assert.equal(p.hp,100);assert.deepEqual(p.materials,{});assert.throws(()=>rpg.act(G,a,'work'),/beklemelisin/);
+  const p=rpg.profile(G,a);assert.equal(p.coins,321);assert.equal(p.sword,'demir-kilic');assert.equal(p.helmet,null);assert.equal(p.gloves,null);assert.equal(p.boots,null);assert.equal(p.pants,null);assert.equal(p.cloak,null);assert.equal(p.hp,100);assert.deepEqual(p.materials,{});assert.throws(()=>rpg.act(G,a,'work'),/beklemelisin/);
+});
+test('helmet, glove, boot and pants items auto-equip and transfer like existing gear',t=>{
+  const {rpg,seed}=setup(t);seed(a,{coins:5000});
+  for(const id of ['deri-kask','celik-kask','celik-eldiven','celik-ayakkabi','celik-pantolon'])rpg.act(G,a,'buy',id);
+  const equipped=rpg.profile(G,a);assert.equal(equipped.helmet,'celik-kask');assert.equal(equipped.gloves,'celik-eldiven');assert.equal(equipped.boots,'celik-ayakkabi');assert.equal(equipped.pants,'celik-pantolon');
+  rpg.transfer(G,a,b,{item:'celik-kask'},'helmet-transfer');assert.equal(rpg.profile(G,a).helmet,'deri-kask');assert.equal(rpg.profile(G,b).helmet,'celik-kask');
 });
 test('class gate is level 10, selection is permanent and wrong-class skills cannot change state',t=>{
   const {rpg,seed,store,advance}=setup(t);seed(a,{xp:8099});assert.throws(()=>rpg.act(G,a,'class','savasci'),/Seviye 10/);

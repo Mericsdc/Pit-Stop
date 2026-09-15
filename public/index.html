@@ -1,17 +1,18 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" class="auth-pending">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0a0c12">
   <meta name="description" content="Pit-Stop Discord botu: sunucu ayarları, otomatik roller, cevaplar, müzik ve olay kayıtları.">
   <title>Pit-Stop · Kontrol merkezi</title>
+  <style>html.auth-pending{background:#0a0c12}html.auth-pending body{visibility:hidden}</style>
   <link rel="icon" href="/assets/logo.webp" type="image/webp">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/layout.css">
   <script src="/app.js" type="module"></script>
 </head>
-<body class="logged-out">
+<body>
   <a class="skip-link" href="#main">İçeriğe geç</a>
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Pit-Stop genel bakış"><img id="panel-logo" class="sidebar-brand-image" src="/assets/login-brand.png" alt="Pit-Stop kontrol merkezi" width="2058" height="764" draggable="false"></a>
@@ -31,7 +32,7 @@
     <div class="sidebar-bottom"><div><span class="status-dot" id="connection-dot"></span><span id="connection-label">Bağlantı kontrol ediliyor</span></div><div class="theme-buttons" role="group" aria-label="Görünüm teması"><button type="button" data-theme-choice="dark" aria-label="Koyu tema" title="Koyu tema">☾</button><button type="button" data-theme-choice="light" aria-label="Aydınlık tema" title="Aydınlık tema">☀</button></div><small id="version-label">Pit-Stop</small></div>
   </aside>
   <div class="shell">
-    <header class="topbar"><button id="menu-toggle" class="menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false">☰</button><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
+    <header class="topbar"><button id="menu-toggle" class="menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false">☰</button><button id="sidebar-collapse" class="sidebar-collapse" type="button" aria-label="Navigasyonu daralt" aria-pressed="false" title="Navigasyonu daralt">≪</button><span class="breadcrumb">Pit-Stop <span>/</span> <strong id="page-label">Genel bakış</strong></span><div class="topbar-actions"><span id="user-label"></span><button id="logout" class="button subtle" hidden>Çıkış yap</button></div></header>
     <button id="menu-backdrop" class="menu-backdrop" type="button" aria-label="Menüyü kapat" hidden></button>
     <main id="main" tabindex="-1">
       <section class="hero" id="hero"><img id="hero-banner" class="hero-banner" src="/assets/banner.webp" alt="" draggable="false"><div class="hero-copy"><span class="eyebrow">PIT LANE / KONTROL MERKEZİ</span><h1>Sunucun, senin kontrolünde.</h1><p>Üyeler, otomasyonlar ve müzik. Hepsi aynı garajda.</p></div></section>

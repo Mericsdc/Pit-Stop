@@ -4,7 +4,11 @@ import { renderRpgContent } from './rpg-view.js';
 // Keep panel artwork and rendered records inside the interface. Form fields stay editable,
 // but copying/cutting, drag export and the context menu are disabled across the site.
 for (const type of ['copy', 'cut', 'dragstart', 'contextmenu']) {
-  document.addEventListener(type, event => event.preventDefault(), { capture: true });
+  document.addEventListener(type, event => {
+    const editable = event.target.closest?.('input, textarea, [contenteditable="true"]');
+    if (editable && ['copy', 'cut'].includes(type)) return;
+    event.preventDefault();
+  }, { capture: true });
 }
 document.addEventListener('selectstart', event => {
   if (!event.target.closest?.('input, textarea, select')) event.preventDefault();
@@ -21,7 +25,25 @@ let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
 const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
 const defaultNavOrder = Object.values(navGroups).flat();
+const panelViewKey = 'pitstop-current-view';
+const sidebarCollapsedKey = 'pitstop-sidebar-collapsed';
 const overviewHeightKey = 'pitstop-overview-card-height-v2';
+function savedPanelView() {
+  const view = localStorage.getItem(panelViewKey);
+  return defaultNavOrder.includes(view) ? view : 'overview';
+}
+function setSidebarCollapsed(collapsed, persist = false) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  const button = $('#sidebar-collapse');
+  if (button) {
+    button.textContent = collapsed ? '≫' : '≪';
+    button.setAttribute('aria-pressed', String(collapsed));
+    button.setAttribute('aria-label', collapsed ? 'Navigasyonu genişlet' : 'Navigasyonu daralt');
+    button.title = collapsed ? 'Navigasyonu genişlet' : 'Navigasyonu daralt';
+  }
+  for (const navButton of $$('.nav-button[data-view]')) navButton.title = collapsed ? titles[navButton.dataset.view] : '';
+  if (persist) localStorage.setItem(sidebarCollapsedKey, collapsed ? '1' : '0');
+}
 function savedNavOrder() {
   try {
     const value = JSON.parse(localStorage.getItem('pitstop-nav-order') || '[]');
@@ -54,6 +76,7 @@ function saveOverviewHeight(card) {
   $$('.dashboard-resizable').forEach(item => { item.style.height = `${height}px`; });
 }
 state.navOrder = savedNavOrder();
+state.view = savedPanelView();
 const initialTheme = localStorage.getItem('pitstop-theme') === 'light' ? 'light' : 'dark';
 document.documentElement.dataset.theme = initialTheme;
 function updateThemeButtons() { $$('[data-theme-choice]').forEach(button => button.classList.toggle('active', button.dataset.themeChoice === document.documentElement.dataset.theme)); }
@@ -400,7 +423,7 @@ async function loadGuild(guildId) {
 }
 function changeView(view) {
   if (state.dirty && !confirm('Kaydedilmemiş değişiklikleriniz var. Bu bölümden ayrılmak istiyor musunuz?')) return;
-  state.view = view; state.dirty = false; notice(''); render();
+  state.view = view; localStorage.setItem(panelViewKey, view); state.dirty = false; notice(''); render();
 }
 async function saveSettings(patch) {
   const guild = state.guild;
@@ -433,6 +456,7 @@ document.addEventListener('click', async event => {
   if (!button) return;
   try {
     if (button.dataset.themeChoice) { document.documentElement.dataset.theme = button.dataset.themeChoice; localStorage.setItem('pitstop-theme', button.dataset.themeChoice); updateThemeButtons(); return; }
+    if (button.id === 'sidebar-collapse') { setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'), true); return; }
     if (button.id === 'menu-toggle') { setMenuOpen(!document.body.classList.contains('menu-open')); return; }
     if (button.id === 'menu-backdrop') { setMenuOpen(false); return; }
     if (button.id === 'toggle-code') { const input = $('#login-code'), showing = input.type === 'text'; input.type = showing ? 'password' : 'text'; button.textContent = showing ? 'Göster' : 'Gizle'; button.setAttribute('aria-label', showing ? 'Kodu göster' : 'Kodu gizle'); return; }
@@ -642,33 +666,43 @@ async function loadWeather() {
   } catch { weather.textContent = 'İstanbul hava durumu şu anda kullanılamıyor'; }
 }
 let loginClockTimer;
+function showLogin() {
+  document.body.classList.add('logged-out');
+  document.documentElement.classList.remove('auth-pending');
+  updateLoginClock();
+  if (!loginClockTimer) loginClockTimer = setInterval(updateLoginClock, 1000);
+  void loadWeather();
+}
 
 async function boot() {
   const theme = localStorage.getItem('pitstop-theme') === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = theme; updateThemeButtons(); applyAppearance();
   state.navOrder = savedNavOrder(); applyNavOrder();
+  setSidebarCollapsed(localStorage.getItem(sidebarCollapsedKey) === '1');
   if (staticHosting) {
     if (livePanelUrl) { location.replace(new URL('/', livePanelUrl).href); return; }
+    showLogin();
     $('#login-error').textContent = 'Canlı panel bağlantısı henüz ayarlanmadı.';
     return;
   }
-  updateLoginClock(); loginClockTimer = setInterval(updateLoginClock, 1000); void loadWeather();
   try {
     const status = await api('/api/status');
     applyAppearance(status.appearance);
     $('#version-label').textContent = `Pit-Stop v${status.version} · ${status.build}`;
     $('#connection-dot').classList.toggle('online', status.ready);
     $('#connection-label').textContent = status.ready ? 'Discord bağlantısı aktif' : 'Discord bağlantısı bekleniyor';
-    try { state.me = await api('/api/me'); } catch (error) { if (error.status !== 401) throw error; return; }
-    document.body.classList.remove('logged-out');
+    try { state.me = await api('/api/me'); } catch (error) { if (error.status !== 401) throw error; showLogin(); return; }
     state.csrf = state.me.csrf;
     $('#user-label').textContent = greetingText();
     $('#logout').hidden = false;
     state.guilds = await api('/api/guilds');
     if (!state.guilds.length) { throw new Error('Yönetebileceğiniz bir sunucu bulunamadı. Bot kurulumunu ve Sunucuyu Yönet izninizi kontrol edin.'); }
-    clearInterval(loginClockTimer); $('#login-panel').hidden = true; $('#workspace').hidden = false;
     await loadGuild(state.guilds[0].id);
-  } catch (error) { notice(error.message, true); }
+    clearInterval(loginClockTimer); loginClockTimer = null;
+    $('#login-panel').hidden = true; $('#workspace').hidden = false;
+    document.body.classList.remove('logged-out');
+    document.documentElement.classList.remove('auth-pending');
+  } catch (error) { showLogin(); notice(error.message, true); }
 }
 await boot();
 setInterval(async () => {

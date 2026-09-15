@@ -9,6 +9,8 @@ test('panel prevents visible content and media from being copied or dragged', ()
   for (const event of ['copy', 'cut', 'dragstart', 'contextmenu']) {
     assert.match(app, new RegExp(`['\"]${event}['\"]`));
   }
+  assert.match(app, /editable\s*&&\s*\['copy', 'cut'\]\.includes\(type\)/u);
+  assert.match(app, /editable\s*&&\s*\['copy', 'cut'\]\.includes\(type\)/u);
   assert.match(app, /selectstart/u);
   assert.match(app, /media\.draggable\s*=\s*false/u);
   assert.match(css, /user-select:none/u);

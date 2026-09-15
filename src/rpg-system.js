@@ -1,24 +1,50 @@
 import { createHash } from 'node:crypto';
 
 export const ITEMS = Object.freeze([
-  { id: 'demir-kilic', name: 'Demir kılıç', slot: 'sword', tier: 1, bonus: 2, price: 250 },
-  { id: 'celik-kilic', name: 'Çelik kılıç', slot: 'sword', tier: 2, bonus: 4, price: 800 },
-  { id: 'efsane-kilic', name: 'Efsanevi kılıç', slot: 'sword', tier: 3, bonus: 7, price: 2200 },
-  { id: 'deri-zirh', name: 'Deri zırh', slot: 'armor', tier: 1, bonus: 1, price: 200 },
-  { id: 'celik-zirh', name: 'Çelik zırh', slot: 'armor', tier: 2, bonus: 3, price: 650 },
-  { id: 'efsane-zirh', name: 'Efsanevi zırh', slot: 'armor', tier: 3, bonus: 5, price: 1800 },
+  { id: 'demir-kilic', name: 'Demir kılıç', slot: 'sword', tier: 1, bonus: 2, price: 250, icon: '/assets/rpg/demir-kilic.webp' },
+  { id: 'celik-kilic', name: 'Çelik kılıç', slot: 'sword', tier: 2, bonus: 4, price: 800, icon: '/assets/rpg/celik-kilic.webp' },
+  { id: 'efsane-kilic', name: 'Efsanevi kılıç', slot: 'sword', tier: 3, bonus: 7, price: 2200, icon: '/assets/rpg/efsanevi-kilic.webp' },
+  { id: 'deri-zirh', name: 'Deri zırh', slot: 'armor', tier: 1, bonus: 1, price: 200, icon: '/assets/rpg/deri-zirh.webp' },
+  { id: 'celik-zirh', name: 'Çelik zırh', slot: 'armor', tier: 2, bonus: 3, price: 650, icon: '/assets/rpg/celik-zirh.webp' },
+  { id: 'efsane-zirh', name: 'Efsanevi zırh', slot: 'armor', tier: 3, bonus: 5, price: 1800, icon: '/assets/rpg/efsanevi-zirh.webp' },
+  { id: 'deri-kask', name: 'Deri kask', slot: 'helmet', tier: 1, bonus: 1, price: 160, icon: '/assets/rpg/deri-kask.webp' },
+  { id: 'celik-kask', name: 'Çelik kask', slot: 'helmet', tier: 2, bonus: 2, price: 520, icon: '/assets/rpg/celik-kask.webp' },
+  { id: 'deri-eldiven', name: 'Deri eldiven', slot: 'gloves', tier: 1, bonus: 1, price: 150, icon: '/assets/rpg/deri-eldiven.webp' },
+  { id: 'celik-eldiven', name: 'Çelik eldiven', slot: 'gloves', tier: 2, bonus: 2, price: 480, icon: '/assets/rpg/celik-eldiven.webp' },
+  { id: 'deri-ayakkabi', name: 'Deri ayakkabı', slot: 'boots', tier: 1, bonus: 1, price: 150, icon: '/assets/rpg/deri-ayakkabi.webp' },
+  { id: 'celik-ayakkabi', name: 'Çelik ayakkabı', slot: 'boots', tier: 2, bonus: 2, price: 480, icon: '/assets/rpg/celik-ayakkabi.webp' },
+  { id: 'deri-pantolon', name: 'Deri pantolon', slot: 'pants', tier: 1, bonus: 1, price: 170, icon: '/assets/rpg/deri-pantolon.webp' },
+  { id: 'celik-pantolon', name: 'Çelik pantolon', slot: 'pants', tier: 2, bonus: 2, price: 540, icon: '/assets/rpg/celik-pantolon.webp' },
   { id: 'demir-kazma', name: 'Demir kazma', slot: 'pickaxe', tier: 1, bonus: 15, price: 500 },
   { id: 'elmas-kazma', name: 'Elmas kazma', slot: 'pickaxe', tier: 2, bonus: 35, price: 1600 },
   { id: 'demir-balta', name: 'Demir balta', slot: 'axe', tier: 1, bonus: 15, price: 450 },
   { id: 'celik-balta', name: 'Çelik balta', slot: 'axe', tier: 2, bonus: 30, price: 1400 },
   { id: 'can-iksiri', name: 'Can iksiri', slot: 'potion', tier: 1, bonus: 50, price: 80 },
   { id: 'sans-iksiri', name: 'Şans iksiri', slot: 'potion', tier: 2, bonus: 20, price: 150 },
-  { id: 'lanetli-kilic', name: 'Lanetli kılıç', slot: 'sword', tier: 4, bonus: 14, price: 5000, source: 'blackmarket', cursed: true },
-  { id: 'golge-zirh', name: 'Gölge zırhı', slot: 'armor', tier: 4, bonus: 8, price: 4500, source: 'blackmarket' },
-  { id: 'ejder-kilic', name: 'Ejderha kılıcı', slot: 'sword', tier: 5, bonus: 12, source: 'craft' },
-  { id: 'ejder-zirh', name: 'Ejderha zırhı', slot: 'armor', tier: 5, bonus: 10, source: 'craft' },
-  { id: 'boss-kilic', name: 'Zindan hükümdarının kılıcı', slot: 'sword', tier: 4, bonus: 11, source: 'dungeon' },
+  { id: 'lanetli-kilic', name: 'Lanetli kılıç', slot: 'sword', tier: 4, bonus: 14, price: 5000, source: 'blackmarket', cursed: true, icon: '/assets/rpg/venomancer-arachna-kilici.webp' },
+  { id: 'golge-zirh', name: 'Gölge zırhı', slot: 'armor', tier: 4, bonus: 8, price: 4500, source: 'blackmarket', icon: '/assets/rpg/venomancer-arachna-zirhi.webp' },
+  { id: 'venom-kask', name: 'Venomancer Arachna kaskı', slot: 'helmet', tier: 4, bonus: 5, price: 2600, source: 'blackmarket', icon: '/assets/rpg/venomancer-arachna-kask.webp' },
+  { id: 'venom-eldiven', name: 'Venomancer Arachna eldiveni', slot: 'gloves', tier: 4, bonus: 5, price: 2400, source: 'blackmarket', icon: '/assets/rpg/venomancer-arachna-eldiven.webp' },
+  { id: 'venom-ayakkabi', name: 'Venomancer Arachna ayakkabısı', slot: 'boots', tier: 4, bonus: 5, price: 2400, source: 'blackmarket', icon: '/assets/rpg/venomancer-arachna-ayakkabi.webp' },
+  { id: 'venom-pelerin', name: 'Venomancer Arachna pelerini', slot: 'cloak', tier: 4, bonus: 6, price: 3400, source: 'blackmarket', icon: '/assets/rpg/venomancer-arachna-pelerin.webp' },
+  { id: 'efsane-kask', name: 'Efsanevi kask', slot: 'helmet', tier: 3, bonus: 3, price: 1700, source: 'blackmarket', icon: '/assets/rpg/efsanevi-kask.webp' },
+  { id: 'efsane-eldiven', name: 'Efsanevi eldiven', slot: 'gloves', tier: 3, bonus: 3, price: 1550, source: 'blackmarket', icon: '/assets/rpg/efsanevi-eldiveni.webp' },
+  { id: 'efsane-ayakkabi', name: 'Efsanevi ayakkabı', slot: 'boots', tier: 3, bonus: 3, price: 1550, source: 'blackmarket', icon: '/assets/rpg/efsanevi-ayakkabi.webp' },
+  { id: 'efsane-pantolon', name: 'Efsanevi pantolon', slot: 'pants', tier: 3, bonus: 3, price: 1800, source: 'blackmarket', icon: '/assets/rpg/efsanevi-pantolonu.webp' },
+  { id: 'ejder-kilic', name: 'Ejderha kılıcı', slot: 'sword', tier: 5, bonus: 12, source: 'craft', icon: '/assets/rpg/ejderha-kilici.webp' },
+  { id: 'ejder-zirh', name: 'Ejderha zırhı', slot: 'armor', tier: 5, bonus: 10, source: 'craft', icon: '/assets/rpg/ejderha-zirhi.webp' },
+  { id: 'ejder-kask', name: 'Ejderha kaskı', slot: 'helmet', tier: 5, bonus: 5, source: 'craft', icon: '/assets/rpg/ejderha-kaski.webp' },
+  { id: 'ejder-eldiven', name: 'Ejderha eldiveni', slot: 'gloves', tier: 5, bonus: 5, source: 'craft', icon: '/assets/rpg/ejderha-eldiveni.webp' },
+  { id: 'ejder-ayakkabi', name: 'Ejderha ayakkabısı', slot: 'boots', tier: 5, bonus: 5, source: 'craft', icon: '/assets/rpg/ejderha-ayakkabisi.webp' },
+  { id: 'ejder-pantolon', name: 'Ejderha pantolonu', slot: 'pants', tier: 5, bonus: 5, source: 'craft', icon: '/assets/rpg/ejderha-pantolonu.webp' },
+  { id: 'boss-kilic', name: 'Zindan hükümdarının kılıcı', slot: 'sword', tier: 4, bonus: 11, source: 'dungeon', icon: '/assets/rpg/zindan-hukumdarinin-kilici.webp' },
+  { id: 'boss-zirh', name: 'Zindan hükümdarının zırhı', slot: 'armor', tier: 4, bonus: 7, source: 'dungeon', icon: '/assets/rpg/zindan-hukumdarinin-zirhi.webp' },
+  { id: 'boss-kask', name: 'Zindan hükümdarının kaskı', slot: 'helmet', tier: 4, bonus: 4, source: 'dungeon', icon: '/assets/rpg/zindan-hukumdarinin-kaski.webp' },
+  { id: 'boss-eldiven', name: 'Zindan hükümdarının eldiveni', slot: 'gloves', tier: 4, bonus: 4, source: 'dungeon', icon: '/assets/rpg/zindan-hukumdarinin-eldiveni.webp' },
+  { id: 'boss-ayakkabi', name: 'Zindan hükümdarının ayakkabısı', slot: 'boots', tier: 4, bonus: 4, source: 'dungeon', icon: '/assets/rpg/zindan-hukumdarinin-ayakkabisi.webp' },
+  { id: 'boss-pantolon', name: 'Zindan hükümdarının pantolonu', slot: 'pants', tier: 4, bonus: 4, source: 'dungeon', icon: '/assets/rpg/zindan-hukumdarinin-pantolonu.webp' },
 ]);
+export const EQUIPMENT_SLOTS = Object.freeze(['sword', 'armor', 'helmet', 'gloves', 'boots', 'pants', 'cloak']);
 export const CLASSES = Object.freeze([
   { id: 'savasci', name: 'Savaşçı', bonus: 3, skill: 'öfke', description: '+3 savaş gücü; Öfke ile ek +7 güç.' },
   { id: 'buyucu', name: 'Büyücü', bonus: 2, skill: 'ateş-topu', description: '+2 savaş gücü; Ateş topu ile ek +9 güç.' },
@@ -32,6 +58,10 @@ export const MONSTERS = Object.freeze([
 export const RECIPES = Object.freeze([
   { id: 'ejder-kilic', name: 'Ejderha kılıcı', materials: { iron: 30, crystal: 8, fragment: 3 }, gold: 1000 },
   { id: 'ejder-zirh', name: 'Ejderha zırhı', materials: { iron: 25, wood: 15, fragment: 3 }, gold: 900 },
+  { id: 'ejder-kask', name: 'Ejderha kaskı', materials: { iron: 18, crystal: 6, fragment: 2 }, gold: 650 },
+  { id: 'ejder-eldiven', name: 'Ejderha eldiveni', materials: { iron: 14, wood: 10, fragment: 2 }, gold: 550 },
+  { id: 'ejder-ayakkabi', name: 'Ejderha ayakkabısı', materials: { iron: 14, crystal: 4, fragment: 2 }, gold: 550 },
+  { id: 'ejder-pantolon', name: 'Ejderha pantolonu', materials: { iron: 20, wood: 12, fragment: 2 }, gold: 700 },
   { id: 'can-iksiri', name: 'Can iksiri', materials: { wood: 3, crystal: 1 }, gold: 20 },
   { id: 'sans-iksiri', name: 'Şans iksiri', materials: { crystal: 3, fragment: 1 }, gold: 40 },
 ]);
@@ -55,7 +85,7 @@ export function world(time, guildId = '') {
   return { date: day, hour, timezone: 'Europe/Istanbul', night: hour < 6 || hour >= 20, weather, openHours, marketOpen: openHours.includes(hour) };
 }
 export function normalize(saved, name, time) {
-  const p = { name, coins: 0, xp: 0, wins: 0, losses: 0, sword: null, armor: null, inventory: [], cooldowns: {}, receipts: [], classId: null, hp: 100, regenAt: time, bag: {}, materials: {}, daily: {}, pvpWins: 0, pvpLosses: 0, ...saved };
+  const p = { name, coins: 0, xp: 0, wins: 0, losses: 0, sword: null, armor: null, helmet: null, gloves: null, boots: null, pants: null, cloak: null, inventory: [], cooldowns: {}, receipts: [], classId: null, hp: 100, regenAt: time, bag: {}, materials: {}, daily: {}, pvpWins: 0, pvpLosses: 0, ...saved };
   p.name = name || p.name;
   const ticks = Math.max(0, Math.floor((time - p.regenAt) / 1800_000));
   p.hp = Math.min(100, p.hp + ticks * 10);
@@ -82,9 +112,10 @@ export function giveItem(p, id) {
   }
 }
 export function power(p) {
-  return (itemById(p.sword)?.bonus || 0) + (itemById(p.armor)?.bonus || 0)
+  return EQUIPMENT_SLOTS.reduce((total, slot) => total + (itemById(p[slot])?.bonus || 0), 0)
     + Math.min(10, level(p.xp) - 1) + (CLASSES.find(c => c.id === p.classId)?.bonus || 0);
 }
+const defense = p => EQUIPMENT_SLOTS.filter(slot => slot !== 'sword').reduce((total, slot) => total + (itemById(p[slot])?.bonus || 0), 0);
 export function usePotion(p, id, time) {
   requireRpg((p.bag[id] || 0) > 0, 'Bu iksir envanterinde yok. /market ile alabilirsin.');
   if (id === 'can-iksiri') {
@@ -156,12 +187,14 @@ export function advancedAction(p, action, choice, { time, roll, guildId, interac
       credit(p, 600, 250); p.wins++; p.materials.fragment = (p.materials.fragment || 0) + 1;
       const drop = roll(1, 101) <= 25 + (p.luckUntil > time ? 20 : 0);
       let loot = '1 boss parçası';
-      if (drop && !p.inventory.includes('boss-kilic')) { giveItem(p, 'boss-kilic'); loot += ' ve Zindan hükümdarının kılıcı'; }
-      else if (drop) { p.materials.fragment++; loot += ' ve 1 ek boss parçası (kılıç zaten sende)'; }
+      const dungeonItems = ITEMS.filter(item => item.source === 'dungeon' && !p.inventory.includes(item.id));
+      const dungeonItem = dungeonItems[roll(0, Math.max(1, dungeonItems.length))];
+      if (drop && dungeonItem) { giveItem(p, dungeonItem.id); loot += ` ve ${dungeonItem.name}`; }
+      else if (drop) { p.materials.fragment++; loot += ' ve 1 ek boss parçası (tüm nadir ekipmanlar sende)'; }
       p.fight = null; p.achievement = { id: interactionId, text: `Zindan hükümdarını yendi! +600 altın, +250 XP; ${loot}.` };
       return `🏆 Boss yenildi! **+600 altın · +250 XP**. Ganimet: **${loot}**.`;
     }
-    const hit = Math.max(2, roll(1, 21) + 8 - (itemById(p.armor)?.bonus || 0));
+    const hit = Math.max(2, roll(1, 21) + 8 - defense(p));
     p.hp = Math.max(0, p.hp - hit);
     if (!p.hp || f.turn >= 20) { p.losses++; p.fight = null; return 'Zindan sona erdi. Canın tükendi veya 20 tur doldu. Eşyan kaybolmaz; canın her 30 dakikada 10 yenilenir.'; }
     return `Tur ${f.turn}: ${choice.move === 'heal' ? 'İksir içtin' : `${damage} hasar verdin`}; boss ${hit} hasar verdi.\nSen: **${p.hp}/100** · Boss: **${f.hp}/100**`;

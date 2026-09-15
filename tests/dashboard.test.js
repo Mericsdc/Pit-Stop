@@ -175,11 +175,11 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.deepEqual(data.leaderboard.map(p => p.name), ['Champion', 'Pilot']);
   assert.equal(data.leaderboard[0].level, 3);
   assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
-  assert.equal(data.items.length, 17);
+  assert.equal(data.items.length, 42);
   assert.equal(data.monsters.length, 3);
   assert.equal(data.commands.length, 24);
   assert.equal(data.classes.length, 3);
-  assert.equal(data.recipes.length, 4);
+  assert.equal(data.recipes.length, 8);
   assert.equal(data.world.timezone, 'Europe/Istanbul');
   assert.ok(data.commands.some(c => c.usage === '/rpg-rehber'));
   assert.ok(!JSON.stringify(data).includes('receipts'));
@@ -337,6 +337,18 @@ test('published FAQ records can be edited and update their Discord message', asy
   assert.equal(fixture.store.getRecord(GUILD, 'faq', 'faq-one').question, 'Yeni soru');
   assert.deepEqual(edits, [{ content: '❓ **Yeni soru**\nYeni cevap', allowedMentions: { parse: [] } }]);
   assert.equal(fixture.store.getLogs(GUILD, { type: 'faq.updated' })[0].actorId, USER);
+});
+
+test('legacy FAQ duplicates can update their own Discord message without a false duplicate error', async t => {
+  const fixture = await setup(t), session = await fixture.login(), edits = [];
+  fixture.store.putRecord(GUILD, 'faq', 'legacy-one', { question: 'Aynı eski soru', answer: 'İlk cevap', channelId: CHANNEL, messageId: '1400000000000000011', createdAt: Date.now() - 1000 });
+  fixture.store.putRecord(GUILD, 'faq', 'legacy-two', { question: 'Aynı eski soru', answer: 'Diğer cevap', status: 'published', channelId: CHANNEL, messageId: '1400000000000000012', createdAt: Date.now() });
+  fixture.channel.messages = { fetch: async id => id === '1400000000000000011' ? { edit: async payload => edits.push(payload) } : null };
+  const response = await fixture.mutation(`/api/guilds/${GUILD}/faqs`, session, { id: 'legacy-one', question: 'Aynı eski soru', answer: 'Güncel cevap' });
+  assert.equal(response.status, 200);
+  assert.equal(fixture.store.getRecord(GUILD, 'faq', 'legacy-one').status, 'published');
+  assert.equal(fixture.store.getRecord(GUILD, 'faq', 'legacy-one').answer, 'Güncel cevap');
+  assert.deepEqual(edits, [{ content: '❓ **Aynı eski soru**\nGüncel cevap', allowedMentions: { parse: [] } }]);
 });
 
 test('panel publishes and removes a guarded emoji role message', async t => {
