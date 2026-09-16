@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { safeError } from './logger.js';
-import { rpgDashboard } from './rpg.js';
+import { rpgDashboard, RPG_ITEMS } from './rpg.js';
 import { dashboardActivitySummary } from './dashboard-activity.js';
 
 const random = () => randomBytes(32).toString('base64url');
@@ -24,6 +24,11 @@ const staticFiles = new Map([
   ['/assets/logo.webp', ['assets/logo.webp', 'image/webp']],
   ['/assets/banner.webp', ['assets/banner.webp', 'image/webp']],
 ]);
+for (const item of RPG_ITEMS) {
+  if (item.icon?.startsWith('/assets/rpg/') && /^[a-z0-9-]+\.webp$/u.test(item.icon.slice('/assets/rpg/'.length))) {
+    staticFiles.set(item.icon, [item.icon.slice(1), 'image/webp', true]);
+  }
+}
 
 export function constantEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -206,9 +211,9 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     try {
       const url = new URL(request.url, base);
       if (staticFiles.has(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
-        const [file, type] = staticFiles.get(url.pathname);
+        const [file, type, immutable] = staticFiles.get(url.pathname);
         const body = await readFile(fileURLToPath(new URL(`../public/${file}`, import.meta.url)));
-        response.writeHead(200, { 'Content-Type': type });
+        response.writeHead(200, { 'Content-Type': type, 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-store' });
         response.end(request.method === 'HEAD' ? undefined : body);
         return;
       }

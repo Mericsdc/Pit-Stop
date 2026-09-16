@@ -245,7 +245,8 @@ function renderRpg() {
 }
 function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }); }
 let rpgLoading = false;
-async function loadRpg() {
+let lastRpgRefreshAt = 0;
+async function loadRpg({ silent = false } = {}) {
   if (rpgLoading) return;
   rpgLoading = true;
   const guildId = state.guild.id;
@@ -253,8 +254,10 @@ async function loadRpg() {
     const data = await guildApi('rpg');
     if (state.guild?.id !== guildId || state.view !== 'rpg' || !$('#rpg-content')) return;
     $('#rpg-content').innerHTML = rpgBody(data);
+    lastRpgRefreshAt = Date.now();
   } catch (error) {
-    if (state.guild?.id === guildId && state.view === 'rpg' && $('#rpg-content')) $('#rpg-content').innerHTML = `<div class="hint">${escape(error.message)} Üstteki Yenile düğmesiyle tekrar deneyin.</div>`;
+    const content = $('#rpg-content');
+    if (state.guild?.id === guildId && state.view === 'rpg' && content && (!silent || content.querySelector('.loading'))) content.innerHTML = `<div class="hint">${escape(error.message)} Üstteki Yenile düğmesiyle tekrar deneyin.</div>`;
   } finally { rpgLoading = false; }
 }
 
@@ -713,7 +716,7 @@ setInterval(async () => {
   try {
     if (state.view === 'logs') await loadLogs();
     if (state.view === 'overview') await loadLogs(false, true);
-    if (state.view === 'rpg' && !$('#rpg-content')?.contains(document.activeElement)) await loadRpg();
+    if (state.view === 'rpg' && Date.now() - lastRpgRefreshAt >= 60_000 && !$('#rpg-content')?.contains(document.activeElement)) await loadRpg({ silent: true });
     if (state.view === 'music' && !$('#query')?.value && !$('#view-content').contains(document.activeElement)) { const music = await guildApi('music'); state.guild.music = music; render(); }
   } catch { /* User-triggered refresh reports connection errors without interrupting editing. */ }
 }, 15_000);

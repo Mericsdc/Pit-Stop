@@ -518,6 +518,18 @@ test('public assets and API responses expose no configured or OAuth credentials'
   assert.equal((await fixture.request('/src/config.js', { headers: { Cookie: session.cookie } })).status, 404);
 });
 
+test('RPG item icons are public immutable assets and do not consume the API rate limit', async (t) => {
+  const fixture = await setup(t), icon = '/assets/rpg/saf-isigin-muhafizi-staffi.webp';
+  for (let index = 0; index < 35; index++) {
+    const response = await fixture.request(icon, { method: 'HEAD' });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/webp');
+    assert.match(response.headers.get('cache-control'), /immutable/u);
+  }
+  assert.equal((await fixture.request('/api/me')).status, 401);
+  assert.equal((await fixture.request('/assets/rpg/not-a-catalog-item.webp')).status, 401);
+});
+
 test('missing OAuth configuration keeps the public dashboard available and login closed', async (t) => {
   const fixture = await setup(t, { clientSecret: '', sessionSecret: '' });
   const status = await fixture.request('/api/status');
