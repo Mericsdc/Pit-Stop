@@ -667,6 +667,8 @@ async function loadWeather() {
 }
 let loginClockTimer;
 function showLogin() {
+  $('#workspace').hidden = true;
+  $('#login-panel').hidden = false;
   document.body.classList.add('logged-out');
   document.documentElement.classList.remove('auth-pending');
   updateLoginClock();
@@ -699,7 +701,8 @@ async function boot() {
     if (!state.guilds.length) { throw new Error('Yönetebileceğiniz bir sunucu bulunamadı. Bot kurulumunu ve Sunucuyu Yönet izninizi kontrol edin.'); }
     await loadGuild(state.guilds[0].id);
     clearInterval(loginClockTimer); loginClockTimer = null;
-    $('#login-panel').hidden = true; $('#workspace').hidden = false;
+    $('#login-panel').hidden = true;
+    $('#workspace').hidden = false;
     document.body.classList.remove('logged-out');
     document.documentElement.classList.remove('auth-pending');
   } catch (error) { showLogin(); notice(error.message, true); }

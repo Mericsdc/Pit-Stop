@@ -424,6 +424,10 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
 :root[data-theme="light"] .activity-chart-point i { border-color: var(--surface); }
 :root[data-theme="light"] .activity-chart-point b { box-shadow: 0 8px 18px #18324924; }
 
+/* Auth and workspace views are mutually exclusive, including during a hard refresh. */
+body:not(.logged-out) #login-panel { display: none !important; }
+body.logged-out #workspace { display: none !important; }
+
 @media (max-width: 1180px) {
   .overview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-primary-grid, .overview-lower-grid { grid-template-columns: 1fr; }
