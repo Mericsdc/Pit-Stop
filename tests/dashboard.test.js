@@ -175,11 +175,11 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.deepEqual(data.leaderboard.map(p => p.name), ['Champion', 'Pilot']);
   assert.equal(data.leaderboard[0].level, 3);
   assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
-  assert.equal(data.items.length, 42);
+  assert.equal(data.items.length, 56);
   assert.equal(data.monsters.length, 3);
   assert.equal(data.commands.length, 24);
   assert.equal(data.classes.length, 3);
-  assert.equal(data.recipes.length, 8);
+  assert.equal(data.recipes.length, 9);
   assert.equal(data.world.timezone, 'Europe/Istanbul');
   assert.ok(data.commands.some(c => c.usage === '/rpg-rehber'));
   assert.ok(!JSON.stringify(data).includes('receipts'));

@@ -159,6 +159,15 @@ test('router ignores other interaction types and rejects DM commands privately',
   assert.deepEqual(dm.calls.replies[0].allowedMentions, { parse: [] });
 });
 
+test('router dispatches autocomplete without applying command cooldowns or audit logs', async () => {
+  const responses=[];let executions=0,completions=0;
+  const autocompleteCommand={...command('gönder',async()=>{executions++;}),autocomplete:async value=>{completions++;await value.respond([{name:'Ejderha pelerini',value:'ejder-pelerin'}]);}};
+  const handle=createInteractionHandler([autocompleteCommand],{store:{addLog:()=>assert.fail('Autocomplete olay kaydı oluşturmamalı')}});
+  const value={isAutocomplete:()=>true,isChatInputCommand:()=>false,inGuild:()=>true,commandName:'gönder',responded:false,respond:async payload=>{responses.push(payload);value.responded=true;}};
+  await handle(value);await handle({...value,responded:false});
+  assert.equal(completions,2);assert.equal(executions,0);assert.deepEqual(responses[0],[{name:'Ejderha pelerini',value:'ejder-pelerin'}]);
+});
+
 test('router answers stale command names privately without executing a command', async () => {
   const unknown = interaction({ commandName: 'removed' });
   await createInteractionHandler([command()])(unknown.value);

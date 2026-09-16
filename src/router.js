@@ -5,6 +5,17 @@ export function createInteractionHandler(commands, { logger = () => {}, now = Da
   const registry = new Map(commands.map(command => [command.data.name, command]));
   const cooldowns = new Map();
   return async function handle(interaction) {
+    if (interaction.isAutocomplete?.()) {
+      const command = registry.get(interaction.commandName);
+      try {
+        if (!interaction.inGuild() || !command?.autocomplete) await interaction.respond([]);
+        else await command.autocomplete(interaction);
+      } catch (error) {
+        logger('error', 'command_autocomplete_failed', { command: interaction.commandName, ...safeError(error) });
+        if (!interaction.responded) await interaction.respond([]).catch(() => {});
+      }
+      return;
+    }
     if (!interaction.isChatInputCommand()) return;
     const respond = async content => {
       if (interaction.deferred || interaction.replied) {

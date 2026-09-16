@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createStore } from '../src/store.js';
 import { createRpg } from '../src/rpg.js';
-import { DAY, LIMIT, world, dateKey, CLASSES } from '../src/rpg-system.js';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { DAY, LIMIT, world, dateKey, CLASSES, ITEMS, RECIPES } from '../src/rpg-system.js';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const G='1400000000000000000',OTHER='1400000000000000009';
@@ -18,6 +18,12 @@ function setup(t,options={}){
 test('legacy players retain balances, equipment and cooldowns while new fields are initialized',t=>{
   const {store,rpg}=setup(t);store.putRecord(G,'rpg_player',a.id,{name:'Old',coins:321,xp:99,wins:2,losses:1,inventory:['demir-kilic'],sword:'demir-kilic',armor:null,cooldowns:{work:9999999999999},receipts:[]});
   const p=rpg.profile(G,a);assert.equal(p.coins,321);assert.equal(p.sword,'demir-kilic');assert.equal(p.helmet,null);assert.equal(p.gloves,null);assert.equal(p.boots,null);assert.equal(p.pants,null);assert.equal(p.cloak,null);assert.equal(p.hp,100);assert.deepEqual(p.materials,{});assert.throws(()=>rpg.act(G,a,'work'),/beklemelisin/);
+});
+test('uploaded RPG artwork is represented once in the catalog and every icon is deployable',()=>{
+  const icons=ITEMS.filter(item=>item.icon);
+  assert.equal(ITEMS.length,56);assert.equal(icons.length,50);assert.equal(new Set(icons.map(item=>item.icon)).size,50);assert.equal(RECIPES.length,9);
+  for(const item of icons)assert.ok(existsSync(join(process.cwd(),'public',item.icon.replace(/^\//u,''))),`${item.name}: ${item.icon}`);
+  for(const type of ['Yay','Hançer','Asa','Tırpan'])assert.ok(ITEMS.some(item=>item.kind===type),`${type} katalogda bulunmalı`);
 });
 test('helmet, glove, boot and pants items auto-equip and transfer like existing gear',t=>{
   const {rpg,seed}=setup(t);seed(a,{coins:5000});
@@ -96,12 +102,15 @@ test('dungeon rejects outsider buttons, expired battles, healing without potions
   advance(900000);assert.equal(rpg.profile(G,a).fight,null);assert.throws(()=>rpg.act(G,a,'dungeonTurn',{id:'boss',turn:0,move:'attack'}),/eskimiş/);
 });
 test('all three skills, market menus, fight buttons and guide fit Discord limits',async t=>{
-  const {rpg,seed}=setup(t);seed(a,{xp:8100});
+  const {rpg,seed}=setup(t);seed(a,{xp:8100,inventory:['ejder-pelerin','venom-hancer'],cloak:'ejder-pelerin',sword:'venom-hancer'});
   for(const name of ['rpg-rehber','market','karaborsa','profil','üret','görev','dünya','zindan']){
     let response;await rpg.commands.find(c=>c.data.name===name).execute({id:`cmd-${name}`,user:a,guildId:G,inGuild:()=>true,options:{getString:()=>null},deferReply:async()=>{},editReply:async p=>{response=p;}});
     assert.ok(response.content.length<=2000,`${name} length ${response.content.length}`);
     for(const row of response.components||[]){const json=row.toJSON();for(const c of json.components){assert.ok(c.custom_id.length<=100);if(c.options)assert.ok(c.options.length<=25);}}
   }
+  const transfer=rpg.commands.find(c=>c.data.name==='gönder');let suggestions;
+  await transfer.autocomplete({guildId:G,user:a,options:{getFocused:()=> 'venom'},respond:async value=>{suggestions=value;}});
+  assert.deepEqual(suggestions,[{name:'Venomancer Arachna hançeri',value:'venom-hancer'}]);
   for(const c of CLASSES)assert.ok(rpg.commands.some(cmd=>cmd.data.name===c.skill));
 });
 test('RPG announcement settings persist and boss celebrations use only the selected guild channel',async t=>{
