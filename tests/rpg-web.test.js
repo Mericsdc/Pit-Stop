@@ -53,3 +53,33 @@ test('website and Discord actions share one player, inventory and economy ledger
   assert.ok(state.transactions.some(item => item.type === 'buy'));
   assert.ok(state.transactions.some(item => item.type === 'work_reward'));
 });
+
+test('shop items can be sold once with server price and equipped fallback', t => {
+  const { store, rpg } = fixture(t);
+  store.putRecord(GUILD, 'rpg_player', user.id, { ...rpg.profile(GUILD, user), coins: 3000 });
+  rpg.act(GUILD, user, 'buy', 'demir-kilic', 'buy_iron');
+  rpg.act(GUILD, user, 'buy', 'celik-kilic', 'buy_steel');
+  assert.equal(rpg.profile(GUILD, user).sword, 'celik-kilic');
+
+  assert.match(rpg.sell(GUILD, user, 'celik-kilic', 'sell_steel'), /400 altına/);
+  const player = rpg.profile(GUILD, user);
+  assert.equal(player.coins, 2350);
+  assert.equal(player.sword, 'demir-kilic');
+  assert.ok(!player.inventory.includes('celik-kilic'));
+  assert.throws(() => rpg.sell(GUILD, user, 'celik-kilic', 'sell_again'), /bulunmuyor/);
+  assert.throws(() => rpg.sell(GUILD, user, 'ejder-kilic', 'sell_special'), /normal mağazadan/);
+  assert.equal(store.listRecords(GUILD, 'rpg_transaction').filter(item => item.type === 'sell').length, 1);
+});
+
+test('web state hides completed or malformed activities and exposes finite market timer', t => {
+  const { store, rpg } = fixture(t);
+  store.putRecord(GUILD, 'rpg_activity', user.id, { status: 'claimed', startedAt: null, endsAt: null });
+  let state = rpg.webState(GUILD, user);
+  assert.equal(state.activity, null);
+  assert.ok(Number.isFinite(state.world.marketTarget));
+  assert.ok(state.world.marketTarget > state.serverTime);
+
+  store.putRecord(GUILD, 'rpg_activity', user.id, { status: 'active', startedAt: 'bozuk', endsAt: 'bozuk' });
+  state = rpg.webState(GUILD, user);
+  assert.equal(state.activity, null);
+});

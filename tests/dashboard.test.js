@@ -176,7 +176,7 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.equal(data.leaderboard[0].level, 3);
   assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
   assert.equal(data.items.length, 56);
-  assert.equal(data.monsters.length, 3);
+  assert.equal(data.monsters.length, 6);
   assert.equal(data.commands.length, 24);
   assert.equal(data.classes.length, 3);
   assert.equal(data.recipes.length, 9);

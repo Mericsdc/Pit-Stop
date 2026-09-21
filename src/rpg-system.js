@@ -65,9 +65,12 @@ export const CLASSES = Object.freeze([
   { id: 'okcu', name: 'Okçu', bonus: 2, skill: 'nişan', description: '+2 savaş gücü, madende +5 puan nadir bulma şansı; Nişan ile ek +8 güç.' },
 ]);
 export const MONSTERS = Object.freeze([
-  { id: 'goblin', name: 'Goblin', defense: 3, reward: 100, xp: 40 },
-  { id: 'trol', name: 'Mağara trolü', defense: 8, reward: 200, xp: 80 },
-  { id: 'ejderha', name: 'Garaj ejderhası', defense: 15, reward: 400, xp: 160 },
+  { id: 'goblin', name: 'Goblin', defense: 3, reward: 100, xp: 90, recommendedLevel: 1 },
+  { id: 'haydut', name: 'Hurda yağmacısı', defense: 5, reward: 145, xp: 140, recommendedLevel: 3 },
+  { id: 'trol', name: 'Mağara trolü', defense: 8, reward: 220, xp: 220, recommendedLevel: 5 },
+  { id: 'golge', name: 'Gölge avcısı', defense: 11, reward: 300, xp: 340, recommendedLevel: 7 },
+  { id: 'golem', name: 'Demir golem', defense: 13, reward: 360, xp: 500, recommendedLevel: 9 },
+  { id: 'ejderha', name: 'Garaj ejderhası', defense: 15, reward: 450, xp: 750, recommendedLevel: 12 },
 ]);
 export const RECIPES = Object.freeze([
   { id: 'ejder-kilic', name: 'Ejderha kılıcı', materials: { iron: 30, crystal: 8, fragment: 3 }, gold: 1000 },
@@ -82,8 +85,8 @@ export const RECIPES = Object.freeze([
 ]);
 export const MATERIAL_NAMES = { iron: 'Demir', wood: 'Odun', crystal: 'Kristal', fragment: 'Boss parçası' };
 export const QUESTS = Object.freeze([
-  { id: 'goblin', name: '3 Goblin yen', field: 'goblins', target: 3, gold: 150, xp: 50 },
-  { id: 'altin', name: 'Çalışma, maden veya savaşlarla 500 altın kazan', field: 'earned', target: 500, gold: 200, xp: 60 },
+  { id: 'goblin', name: '3 Goblin yen', field: 'goblins', target: 3, gold: 150, xp: 120 },
+  { id: 'altin', name: 'Çalışma, maden veya savaşlarla 500 altın kazan', field: 'earned', target: 500, gold: 200, xp: 150 },
 ]);
 export const LIMIT = 1_000_000_000;
 export const DAY = 86_400_000;
@@ -162,7 +165,7 @@ export function advancedAction(p, action, choice, { time, roll, guildId, interac
   if (action === 'daily') {
     requireRpg(!p.daily.lastAt || time - p.daily.lastAt >= DAY, `Günlük ödül için ${Math.max(1, Math.ceil((DAY - (time - (p.daily.lastAt || 0))) / 3600_000))} saat daha beklemelisin.`);
     const streak = p.daily.lastAt && time - p.daily.lastAt <= 2 * DAY ? Math.min(7, (p.daily.streak || 0) + 1) : 1;
-    const gold = 100 + (streak - 1) * 25, xp = 25 + (streak - 1) * 5;
+    const gold = 100 + (streak - 1) * 25, xp = 60 + (streak - 1) * 10;
     credit(p, gold, xp, false); p.daily = { lastAt: time, streak };
     return `Günlük ödül: **+${gold} altın · +${xp} XP**. Seri: **${streak}/7**. 24 saat sonra yeniden alabilirsin; 48 saat aşılırsa seri sıfırlanır.`;
   }

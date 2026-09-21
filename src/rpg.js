@@ -3,7 +3,7 @@ import { SlashCommandBuilder, MessageFlags, escapeMarkdown, ActionRowBuilder, Bu
 import { ITEMS, MONSTERS, CLASSES, RECIPES, QUESTS, MATERIAL_NAMES, LIMIT, EQUIPMENT_SLOTS, level, itemById, normalize, world, power, credit, giveItem, advancedAction, RpgError, requireRpg } from './rpg-system.js';
 import { createSocial } from './rpg-social.js';
 export { ITEMS as RPG_ITEMS, MONSTERS as RPG_MONSTERS, level as rpgLevel } from './rpg-system.js';
-const waits = { work: 1800000, mine: 900000, battle: 300000, dungeon: 3600000, gamble: 60000 };
+const waits = { work: 1800000, mine: 900000, battle: 120000, dungeon: 3600000, gamble: 60000 };
 const noMentions = { parse: [] }, title = user => user.globalName || user.username;
 const choices = items => items.map(item => ({ name: item.name, value: item.id }));
 const slots = { sword: 'saldırı', armor: 'savunma', helmet: 'savunma', gloves: 'savunma', boots: 'savunma', pants: 'savunma', cloak: 'savunma', pickaxe: '% maden geliri', axe: '% çalışma geliri', potion: 'etki' };
@@ -14,7 +14,7 @@ export const RPG_GUIDE = [
   '⚔️ **Pit-Stop RPG rehberi**',
   '**Kazan:** /çalış (30 dk), /maden (15 dk), /günlük (24 saat; seri 7 güne kadar artar). /görev ile günlük 3 Goblin ve 500 altın görevlerini takip et.',
   '**Ekipman:** /mağaza veya /market menüsünden al; /satın-al ile doğrudan seç. /profil envanterini gösterir. /iksir can veya 30 dakikalık şans etkisi sağlar. Kazma maden, balta çalışma gelirini artırır.',
-  '**Sınıflar:** Seviye 10’da /sınıf ile kalıcı seçim yap: Savaşçı /öfke, Büyücü /ateş-topu, Okçu /nişan. Yetenekler 30 dk, normal /savaş 5 dk bekler. d20 + ekipman + seviye + sınıf gücü karşılaştırılır; eşitlikte oyuncu kazanır.',
+  '**Sınıflar:** Seviye 10’da /sınıf ile kalıcı seçim yap: Savaşçı /öfke, Büyücü /ateş-topu, Okçu /nişan. Yetenekler 30 dk, normal /savaş 2 dk bekler. d20 + ekipman + seviye + sınıf gücü karşılaştırılır; eşitlikte oyuncu kazanır.',
   '**Zindan:** Seviye 3’te /zindan. Saldır, İksir İç, Kaç düğmeleri; 1 saat giriş bekleme. Boss +600 altın, +250 XP ve parça verir; %25 nadir ekipman şansı. Can 30 dk’da 10 yenilenir.',
   '**Üretim:** /üret tariflerle demir, odun, kristal ve boss parçalarını birleştirir. /karaborsa günde iki saat açılır; Venomancer Arachna kılıcı %25 ihtimalle saldırıyı 10 azaltır. /dünya hava, gece ve açılış saatlerini gösterir.',
   '**Sosyal:** /gönder ile aynı sunucudaki oyuncuya altın veya eşya aktar. /düello için rakibin onayı şart; 2 dakikada kabul edilmezse biter. İki taraf da seçilen 1–500 altını riske eder. /sıralama ilk 10 oyuncuyu gösterir.',
@@ -38,7 +38,7 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       const rare=action==='mine'&&roll(1,101)<=chance;
       const base=action==='work'?roll(50,101):rare?roll(100,181):roll(25,66);
       const bonus=itemById(p[action==='mine'?'pickaxe':'axe'])?.bonus||0;
-      const earned=Math.floor(base*(1+bonus/100));credit(p,earned,action==='work'?10:rare?20:8);
+      const earned=Math.floor(base*(1+bonus/100));credit(p,earned,action==='work'?35:rare?45:25);
       const material=action==='work'?'wood':'iron',quantity=roll(1,4);p.materials[material]=Math.min(LIMIT,(p.materials[material]||0)+quantity);
       if(rare)p.materials.crystal=Math.min(LIMIT,(p.materials.crystal||0)+1);
       result=`${rare?'💎 Nadir kristal buldun!':action==='work'?'🔧 Vardiyan bitti.':'⛏️ Cevher çıkardın.'}\n**+${earned} altın** · Bakiye: **${p.coins}**\n+${quantity} ${MATERIAL_NAMES[material]}${rare?' · +1 Kristal':''}${action==='mine'?` · Nadir bulma: %${chance} (${w.night?'Gece':'Gündüz'}, ${w.weather})`:''}`;
@@ -123,16 +123,42 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
     });
     return result;
   }
+  function sell(guildId,user,itemId,interactionId=randomUUID()) {
+    let result;
+    store.transactRecords(guildId,[{kind:'rpg_player',id:user.id},{kind:'rpg_transaction',id:interactionId}],([saved,receipt])=>{
+      const time=now(),p=normalize(saved,title(user),time),before={coins:p.coins,xp:p.xp},item=itemById(itemId);
+      requireRpg(!receipt&&!p.receipts.includes(interactionId),'Bu satış zaten tamamlandı.');
+      requireRpg(item&&!item.source,'Yalnızca normal mağazadan alınan eşyalar satılabilir.');
+      if(item.slot==='potion') {
+        requireRpg((p.bag[item.id]||0)>0,'Bu eşya envanterinde bulunmuyor.');
+        p.bag[item.id]--;
+      } else {
+        requireRpg(p.inventory.includes(item.id),'Bu eşya envanterinde bulunmuyor.');
+        p.inventory=p.inventory.filter(id=>id!==item.id);
+        if(p[item.slot]===item.id) {
+          const replacement=ITEMS.filter(candidate=>candidate.slot===item.slot&&p.inventory.includes(candidate.id)).sort((a,b)=>b.tier-a.tier||b.bonus-a.bonus)[0];
+          p[item.slot]=replacement?.id||null;
+        }
+      }
+      const salePrice=Math.max(1,Math.floor(item.price*0.5));credit(p,salePrice,0,false);
+      result=`${item.name} **${salePrice} altına** satıldı. Bakiye: **${p.coins} altın**.`;
+      p.receipts=[...p.receipts.slice(-49),interactionId];p.updatedAt=time;
+      return [p,transaction(p,user.id,'sell',before,result,time,interactionId,{itemId:item.id,salePrice})];
+    });
+    return result;
+  }
   function webState(guildId,user,{avatar=null}={}) {
     const time=now(),p=profile(guildId,user),w=world(time,guildId),rawActivity=store.getRecord(guildId,'rpg_activity',user.id);
-    const activity=rawActivity&&rawActivity.status==='active'&&rawActivity.endsAt<=time?{...rawActivity,status:'ready'}:rawActivity;
+    const hasValidActivity=rawActivity&&['active','ready'].includes(rawActivity.status)&&Number.isFinite(Number(rawActivity.startedAt))&&Number.isFinite(Number(rawActivity.endsAt));
+    const activity=hasValidActivity?(Number(rawActivity.endsAt)<=time?{...rawActivity,status:'ready'}:rawActivity):null;
     const classInfo=CLASSES.find(c=>c.id===p.classId)||null;
     const currentLevel=level(p.xp),xpStart=(currentLevel-1)**2*100,xpEnd=currentLevel**2*100;
     const equipment=Object.fromEntries([...EQUIPMENT_SLOTS,'pickaxe','axe'].map(slot=>[slot,itemById(p[slot])||null]));
     const defense=EQUIPMENT_SLOTS.filter(slot=>slot!=='sword').reduce((total,slot)=>total+(itemById(p[slot])?.bonus||0),0);
-    const inventory=ITEMS.filter(item=>p.inventory.includes(item.id)||(p.bag[item.id]||0)>0).map(item=>({...item,rarity:rarityNames[item.tier]||'Mitik',quantity:item.slot==='potion'?(p.bag[item.id]||0):1,equipped:p[item.slot]===item.id}));
+    const inventory=ITEMS.filter(item=>p.inventory.includes(item.id)||(p.bag[item.id]||0)>0).map(item=>({...item,rarity:rarityNames[item.tier]||'Mitik',quantity:item.slot==='potion'?(p.bag[item.id]||0):1,equipped:p[item.slot]===item.id,sellable:!item.source,sellPrice:!item.source?Math.max(1,Math.floor(item.price*0.5)):null}));
     const startOfDay=Date.UTC(Number(w.date.slice(0,4)),Number(w.date.slice(5,7))-1,Number(w.date.slice(8,10)))-3*3600_000;
-    const marketTarget=w.marketOpen?startOfDay+(w.hour+1)*3600_000:startOfDay+((w.openHours.find(hour=>hour>w.hour)??(24+w.openHours[0]))*3600_000);
+    const nextOpenHour=w.openHours.find(hour=>hour>w.hour);
+    const marketTarget=w.marketOpen?startOfDay+(w.hour+1)*3600_000:startOfDay+((nextOpenHour??(24+w.openHours[0]))*3600_000);
     const transactions=store.listRecords(guildId,'rpg_transaction',500).filter(entry=>entry.playerId===user.id).slice(0,20);
     return {
       serverTime:time,updatedAt:time,
@@ -189,7 +215,7 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
     command('mağaza','Ekipman, kazma, balta ve iksir marketini aç.',i=>shop(i)),
     command('market','İnteraktif ekipman ve iksir marketini aç.',i=>shop(i)),
     command('satın-al','Altın karşılığında bir market eşyası al.',mutate('buy','eşya'),d=>option(d,'eşya','Satın alınacak eşya',shopItems)),
-    command('savaş','d20 ile canavara meydan oku. Bekleme: 5 dakika.',mutate('battle','canavar'),monsterOption),
+    command('savaş','d20 ile canavara meydan oku. Bekleme: 2 dakika.',mutate('battle','canavar'),monsterOption),
     command('sınıf','Seviye 10: kalıcı Savaşçı, Büyücü veya Okçu seç.',mutate('class','seçim'),d=>option(d,'seçim','Sınıf seçimi kalıcıdır',CLASSES)),
     ...CLASSES.map(c=>command(c.skill,`${c.name} yeteneği. Bekleme: 30 dakika.`,i=>act(i.guildId,i.user,'battle',{monster:i.options.getString('canavar'),skill:c.skill},i.id),monsterOption)),
     command('iksir','Can veya 30 dakikalık şans iksiri kullan.',mutate('potion','tür'),d=>option(d,'tür','Kullanılacak iksir',ITEMS.filter(i=>i.slot==='potion'))),
@@ -227,5 +253,5 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       if(i.deferred||i.replied)await i.followUp({content,flags:MessageFlags.Ephemeral,allowedMentions:noMentions}).catch(()=>{});else await i.reply({content,flags:MessageFlags.Ephemeral,allowedMentions:noMentions}).catch(()=>{});
     }
   }
-  return {commands,act,profile,startActivity,claimActivity,equip,webState,transfer,challenge,resolveDuel,handleInteraction};
+  return {commands,act,profile,startActivity,claimActivity,equip,sell,webState,transfer,challenge,resolveDuel,handleInteraction};
 }

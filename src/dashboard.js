@@ -369,6 +369,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
             message = activity.type === 'mine' ? 'Madencilik başladı.' : 'Garaj vardiyası başladı.';
           } else if (area === 'activity' && operation === 'claim') message = rpg.claimActivity(guildId, user, requestId).result;
           else if (area === 'shop' && operation === 'buy') message = rpg.act(guildId, user, 'buy', body.itemId, requestId);
+          else if (area === 'shop' && operation === 'sell') message = rpg.sell(guildId, user, body.itemId, requestId);
           else if (area === 'equipment' && operation === 'equip') message = rpg.equip(guildId, user, body.itemId, requestId);
           else if (area === 'potion' && operation === 'use') message = rpg.act(guildId, user, 'potion', body.itemId, requestId);
           else if (area === 'quest' && operation === 'claim') message = rpg.act(guildId, user, 'quest', body.questId, requestId);

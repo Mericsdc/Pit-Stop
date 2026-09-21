@@ -304,6 +304,9 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
 .rpg-shop-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .rpg-game-card { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 13px; align-items: center; min-width: 0; }
 .rpg-game-card > .button { grid-column: 1 / -1; min-height: 38px; font-size: 11px; }
+.rpg-game-card > .rpg-card-actions { grid-column: 1 / -1; }
+.rpg-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rpg-card-actions .button { min-height: 38px; padding: 7px 10px; font-size: 11px; }
 .rpg-art { display: grid; place-items: center; width: 66px; height: 66px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--raised); color: var(--cyan); }
 .rpg-art img { width: 100%; height: 100%; object-fit: contain; }
 .rpg-card-copy { min-width: 0; }
@@ -340,6 +343,8 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
 .rpg-craft-list .rpg-art { width: 48px; height: 48px; }
 .rpg-craft-list div:nth-child(2) { display: grid; min-width: 0; }
 .rpg-craft-list small { color: var(--muted); font-size: 9px; }
+.rpg-craft-list small .ready { color: color-mix(in srgb, var(--cyan) 72%, var(--muted)); }
+.rpg-craft-list small .missing { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
 .rpg-leaderboard table { min-width: 680px; }
 .rpg-leaderboard tr.current td { background: color-mix(in srgb, var(--cyan) 6%, var(--surface)); }
 .rpg-profile-hero { display: flex; align-items: center; gap: 15px; }
@@ -401,6 +406,7 @@ footer { margin-top: 32px; padding-top: 24px; font-size: 11px; color: var(--mute
   .rpg-battle-actions { grid-column: 1; }
   .rpg-history article { grid-template-columns: 80px 1fr 6px; }
   .rpg-screen-heading h2 { font-size: 20px; }
+  .rpg-card-actions { grid-template-columns: 1fr; }
 }
 .reaction-role-layout { align-items: start; }
 .reaction-role-layout > .card { height: auto; }

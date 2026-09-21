@@ -49,7 +49,7 @@ test('battle dice, equipment and victory rewards are applied once', t => {
   const result = rpg.act(GUILD, user, 'battle', 'goblin', 'battle1');
   assert.match(result, /Kazandın/); // 1 + 2 + 1 = 1 + 3, tie wins.
   assert.equal(rpg.profile(GUILD, user).coins, 100);
-  assert.equal(rpg.profile(GUILD, user).xp, 40);
+  assert.equal(rpg.profile(GUILD, user).xp, 90);
   assert.equal(rpg.profile(GUILD, user).wins, 1);
   assert.throws(() => rpg.act(GUILD, user, 'battle', 'goblin', 'battle2'), /beklemelisin/);
 });

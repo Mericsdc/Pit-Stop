@@ -280,7 +280,14 @@ function updateRpgTimers() {
   let expiredActivity = false;
   for (const node of $$('[data-rpg-countdown]')) {
     const serverNow = Date.now() + state.rpgClockOffset;
-    const left = Number(node.dataset.endsAt) - serverNow, seconds = Math.max(0, Math.ceil(left / 1000));
+    const endsAt = Number(node.dataset.endsAt);
+    if (!Number.isFinite(endsAt) || endsAt <= 0) { node.textContent = '—'; continue; }
+    const left = endsAt - serverNow, seconds = Math.max(0, Math.ceil(left / 1000));
+    const activityEndsAt = Number(state.rpgData?.activity?.endsAt);
+    if (left <= 0 && state.rpgData?.activity?.status === 'ready' && endsAt === activityEndsAt) {
+      node.textContent = node.classList.contains('rpg-large-timer') ? 'ÖDÜL HAZIR' : 'Ödül hazır';
+      continue;
+    }
     const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60), rest = seconds % 60;
     node.textContent = hours ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
     if (left <= 0 && state.rpgData?.activity?.status === 'active' && Number(state.rpgData.activity.endsAt) <= serverNow) expiredActivity = true;
@@ -511,6 +518,11 @@ document.addEventListener('click', async event => {
         const item = state.rpgData?.items?.find(candidate => candidate.id === button.dataset.itemId), dialog = $('#rpg-purchase-dialog');
         if (!item || !dialog) throw new Error('Eşya bilgisi bulunamadı.');
         dialog.dataset.itemId = item.id; $('#rpg-purchase-name').textContent = item.name; $('#rpg-purchase-price').textContent = `${number(item.price)} altın`; $('#rpg-purchase-after').textContent = `${number(Math.max(0, state.rpgData.player.coins - item.price))} altın`; dialog.showModal(); return;
+      }
+      if (action === 'sell') {
+        const itemName = button.dataset.itemName || 'Bu eşya', price = number(Number(button.dataset.sellPrice || 0));
+        if (!confirm(`${itemName} ${price} altına satılacak. Bu işlemi onaylıyor musunuz?`)) return;
+        button.disabled = true; await rpgRequest('shop/sell', { itemId: button.dataset.itemId }); return;
       }
       button.disabled = true;
       if (action === 'start-activity') await rpgRequest('activity/start', { type: button.dataset.activityType });
