@@ -85,7 +85,7 @@ test('multiple autoroles retain backward compatibility and cannot clear enabled 
 });
 
 test('panel login code is sent in a Discord copyable code block', async t => {
-  const f = fixture(t, { config: { publicUrl: 'https://pit-stop.example.com', panelOrigins: ['https://pit-stop.example.com', 'https://pit-stop-fallback.example.com'] } });
+  const f = fixture(t, { config: { publicUrl: 'https://pit-stop.example.com', panelOrigins: ['https://pit-stop.example.com', 'https://pit-stop-fallback.example.com', 'https://safe-tunnel.trycloudflare.com'] } });
   const command = f.features.commands.find(item => item.data.toJSON().name === 'panel-giris');
   f.member.permissions = new PermissionsBitField(P.ManageGuild);
   let reply;
@@ -97,6 +97,7 @@ test('panel login code is sent in a Discord copyable code block', async t => {
   assert.match(reply.content, /sağındaki kopyalama düğmesini/u);
   assert.match(reply.content, /Panel: <https:\/\/pit-stop\.example\.com>/u);
   assert.match(reply.content, /GoodbyDPI yedek giriş: <https:\/\/pit-stop-fallback\.example\.com>/u);
+  assert.match(reply.content, /Cloudflare yedek giriş: <https:\/\/safe-tunnel\.trycloudflare\.com>/u);
   assert.equal(f.store.listRecords(G, 'panel_login_code').length, 1);
 });
 test('every autorole is validated against actor and bot hierarchy', async () => {
