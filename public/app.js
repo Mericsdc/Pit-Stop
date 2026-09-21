@@ -20,7 +20,7 @@ for (const media of document.querySelectorAll('img, video')) media.draggable = f
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null };
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0 };
 let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
 const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
@@ -241,11 +241,15 @@ function overviewLogList(logs) {
 }
 
 function renderRpg() {
-  return `<section class="card"><div class="card-header"><div><h3>Garajdan maceraya</h3><p class="muted">Altın kazan, ekipmanını güçlendir ve sunucunun sıralamasında yüksel.</p></div><span class="badge">/rpg-rehber</span></div><p class="muted tiny">Oyun komutlarını Discord’da kullanın. Bu sayfada güncel eşya kataloğunu, canavarları ve ilk 10 oyuncuyu takip edebilirsiniz.</p></section><form id="rpg-settings-form" class="card form-stack"><h3>Başarı duyuruları</h3><p class="muted tiny">Boss zaferleri ve üretilen efsanevi eşyalar seçilen kanalda kutlanır. Kanal seçmezseniz yalnızca olay kayıtlarına yazılır.</p><label>Duyuru kanalı<select id="rpg-announcement-channel">${channelOptions(state.guild.settings.rpgAnnouncementChannelId)}</select></label><div class="form-actions"><button type="submit" class="button primary">Duyuru ayarını kaydet</button></div></form><div id="rpg-content"><div class="loading">RPG bilgileri yükleniyor…</div></div>`;
+  return `<div id="rpg-content"><div class="loading">RPG karakterin hazırlanıyor…</div></div><details class="card rpg-admin-settings"><summary>RPG yönetim ayarları</summary><form id="rpg-settings-form" class="form-stack"><p class="muted tiny">Boss zaferleri ve üretilen efsanevi eşyalar seçilen Discord kanalında kutlanır.</p><label>Duyuru kanalı<select id="rpg-announcement-channel">${channelOptions(state.guild.settings.rpgAnnouncementChannelId)}</select></label><div class="form-actions"><button type="submit" class="button primary">Duyuru ayarını kaydet</button></div></form></details>`;
 }
-function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }); }
+function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }, state.rpgSection); }
 let rpgLoading = false;
 let lastRpgRefreshAt = 0;
+function renderRpgState() {
+  const content = $('#rpg-content');
+  if (content && state.rpgData) { content.innerHTML = rpgBody(state.rpgData); updateRpgTimers(); }
+}
 async function loadRpg({ silent = false } = {}) {
   if (rpgLoading) return;
   rpgLoading = true;
@@ -253,12 +257,38 @@ async function loadRpg({ silent = false } = {}) {
   try {
     const data = await guildApi('rpg');
     if (state.guild?.id !== guildId || state.view !== 'rpg' || !$('#rpg-content')) return;
-    $('#rpg-content').innerHTML = rpgBody(data);
+    state.rpgData = data;
+    state.rpgClockOffset = Number(data.serverTime || Date.now()) - Date.now();
+    renderRpgState();
     lastRpgRefreshAt = Date.now();
   } catch (error) {
     const content = $('#rpg-content');
     if (state.guild?.id === guildId && state.view === 'rpg' && content && (!silent || content.querySelector('.loading'))) content.innerHTML = `<div class="hint">${escape(error.message)} Üstteki Yenile düğmesiyle tekrar deneyin.</div>`;
   } finally { rpgLoading = false; }
+}
+function rpgRequestId() { return crypto.randomUUID().replaceAll('-', '_'); }
+async function rpgRequest(path, body = {}) {
+  const result = await guildApi(`rpg/${path}`, { method: 'POST', body: JSON.stringify({ ...body, requestId: rpgRequestId() }) });
+  state.rpgData = result.state;
+  state.rpgClockOffset = Number(result.state?.serverTime || Date.now()) - Date.now();
+  renderRpgState();
+  notice(String(result.message || 'RPG işlemi tamamlandı.').replaceAll(/[*_`]/g, '').split('\n')[0]);
+  return result;
+}
+function updateRpgTimers() {
+  if (state.view !== 'rpg') return;
+  let expiredActivity = false;
+  for (const node of $$('[data-rpg-countdown]')) {
+    const serverNow = Date.now() + state.rpgClockOffset;
+    const left = Number(node.dataset.endsAt) - serverNow, seconds = Math.max(0, Math.ceil(left / 1000));
+    const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60), rest = seconds % 60;
+    node.textContent = hours ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+    if (left <= 0 && state.rpgData?.activity?.status === 'active' && Number(state.rpgData.activity.endsAt) <= serverNow) expiredActivity = true;
+  }
+  if (expiredActivity) {
+    state.rpgData.activity.status = 'ready';
+    renderRpgState();
+  }
 }
 
 function renderCommunity() {
@@ -418,7 +448,7 @@ function render() {
 }
 async function loadGuild(guildId) {
   const version = ++guildLoadVersion;
-  state.guild = null; state.panelAccess = null; state.reactionRoleRecords = [];
+  state.guild = null; state.panelAccess = null; state.reactionRoleRecords = []; state.rpgData = null; state.rpgSection = 'home';
   $('#view-content').innerHTML = '<div class="loading">Sunucu bilgileri yükleniyor…</div>';
   const guild = await api(`/api/guilds/${guildId}`);
   if (version !== guildLoadVersion) return;
@@ -463,6 +493,39 @@ document.addEventListener('click', async event => {
     if (button.id === 'menu-toggle') { setMenuOpen(!document.body.classList.contains('menu-open')); return; }
     if (button.id === 'menu-backdrop') { setMenuOpen(false); return; }
     if (button.id === 'toggle-code') { const input = $('#login-code'), showing = input.type === 'text'; input.type = showing ? 'password' : 'text'; button.textContent = showing ? 'Göster' : 'Gizle'; button.setAttribute('aria-label', showing ? 'Kodu göster' : 'Kodu gizle'); return; }
+    if (button.dataset.rpgSection) { state.rpgSection = button.dataset.rpgSection; renderRpgState(); $('#rpg-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (button.dataset.rpgFilter) {
+      const filter = button.dataset.rpgFilter;
+      $$('[data-rpg-filter]').forEach(item => item.classList.toggle('active', item === button));
+      $$('.rpg-shop-item').forEach(item => { item.hidden = filter !== 'all' && item.dataset.rpgCategory !== filter; });
+      return;
+    }
+    if (button.id === 'rpg-confirm-purchase') {
+      const dialog = $('#rpg-purchase-dialog'), itemId = dialog?.dataset.itemId;
+      if (!itemId) throw new Error('Satın alınacak eşya bulunamadı.');
+      dialog.close(); button.disabled = true; await rpgRequest('shop/buy', { itemId }); return;
+    }
+    if (button.dataset.rpgAction) {
+      const action = button.dataset.rpgAction;
+      if (action === 'buy') {
+        const item = state.rpgData?.items?.find(candidate => candidate.id === button.dataset.itemId), dialog = $('#rpg-purchase-dialog');
+        if (!item || !dialog) throw new Error('Eşya bilgisi bulunamadı.');
+        dialog.dataset.itemId = item.id; $('#rpg-purchase-name').textContent = item.name; $('#rpg-purchase-price').textContent = `${number(item.price)} altın`; $('#rpg-purchase-after').textContent = `${number(Math.max(0, state.rpgData.player.coins - item.price))} altın`; dialog.showModal(); return;
+      }
+      button.disabled = true;
+      if (action === 'start-activity') await rpgRequest('activity/start', { type: button.dataset.activityType });
+      if (action === 'claim-activity') await rpgRequest('activity/claim');
+      if (action === 'battle' || action === 'skill-battle') await rpgRequest('battle/action', { monsterId: button.dataset.monsterId, ...(action === 'skill-battle' ? { skill: button.dataset.skill } : {}) });
+      if (action === 'equip') await rpgRequest('equipment/equip', { itemId: button.dataset.itemId });
+      if (action === 'use-potion') await rpgRequest('potion/use', { itemId: button.dataset.itemId });
+      if (action === 'claim-quest') await rpgRequest('quest/claim', { questId: button.dataset.questId });
+      if (action === 'daily') await rpgRequest('daily/claim');
+      if (action === 'select-class') { if (!confirm('Sınıf seçimi kalıcıdır. Bu sınıfı seçmek istiyor musunuz?')) return; await rpgRequest('class/select', { classId: button.dataset.classId }); }
+      if (action === 'dungeon-start') await rpgRequest('dungeon/start');
+      if (action === 'dungeon-move') await rpgRequest('dungeon/action', { move: button.dataset.move });
+      if (action === 'craft') await rpgRequest('craft/create', { recipeId: button.dataset.recipeId });
+      return;
+    }
     if (button.dataset.view || button.dataset.go) { if (state.guild) { changeView(button.dataset.view || button.dataset.go); setMenuOpen(false); } return; }
     if (button.dataset.moveView) {
       const group = Object.values(navGroups).find(views => views.includes(button.dataset.moveView));
@@ -544,7 +607,7 @@ document.addEventListener('submit', async event => {
   if (button) button.disabled = true;
   notice('');
   try {
-    if (form.id === 'code-login-form') { const code = $('#login-code').value.trim(); $('#login-error').textContent = ''; button.textContent = 'Kod doğrulanıyor…'; await api('/auth/code', { method: 'POST', body: JSON.stringify({ code }) }); location.reload(); return; }
+    if (form.id === 'code-login-form') { const code = $('#login-code').value.trim(); $('#login-error').textContent = ''; button.textContent = 'Kod doğrulanıyor…'; await api('/auth/code', { method: 'POST', body: JSON.stringify({ code }) }); $('#login-code').value = ''; await boot(); return; }
     if (form.id === 'community-form') await saveSettings({ autoRoleEnabled: $('#auto-role-enabled').checked, autoRoleIds: selectedRoles('auto-role-ids'), leaveEnabled: $('#leave-enabled').checked, leaveChannelId: $('#leave-channel').value || null, leaveMessage: $('#leave-message').value });
     if (form.id === 'blacklist-settings') await saveSettings({ blacklistOnLeave: $('#blacklist-on-leave').checked });
     if (form.id === 'blacklist-add') { await guildApi('blacklist', { method: 'POST', body: JSON.stringify({ userId: $('#blacklist-user').value.trim(), reason: $('#blacklist-reason').value.trim() }) }); form.reset(); state.dirty = false; await loadFeatureRecords(); notice('Kullanıcı kara listeye eklendi.'); }
@@ -721,3 +784,4 @@ setInterval(async () => {
   } catch { /* User-triggered refresh reports connection errors without interrupting editing. */ }
 }, 15_000);
 setInterval(updateBoostedProgress, 1_000);
+setInterval(updateRpgTimers, 1_000);

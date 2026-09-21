@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { safeError } from './logger.js';
-import { rpgDashboard, RPG_ITEMS } from './rpg.js';
+import { createRpg, RPG_ITEMS } from './rpg.js';
+import { RpgError } from './rpg-system.js';
 import { dashboardActivitySummary } from './dashboard-activity.js';
 
 const random = () => randomBytes(32).toString('base64url');
@@ -88,9 +89,11 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
   if (next.defenseEnabled && (!next.defenseChannelId || !next.supportRoleId)) throw httpError(400, 'Savunma sistemi için ana kanal ve destek rolü seçin.');
 }
 
-export function createDashboard({ client, store, music, features, crew, boostedEvents, config, logger = () => {}, fetcher = fetch }) {
+export function createDashboard({ client, store, music, features, crew, boostedEvents, rpg: suppliedRpg, config, logger = () => {}, fetcher = fetch }) {
   const sessions = new Map(), pendingStates = new Map(), limits = new Map(), weatherCache = new Map();
+  const rpg = suppliedRpg || createRpg(store, { client, logger });
   const base = new URL(config.publicUrl);
+  const trustedOrigins = new Set(config.panelOrigins?.length ? config.panelOrigins : [base.origin]);
   const secure = base.protocol === 'https:';
   const configured = Boolean(config.clientSecret && config.sessionSecret);
   const sessionStoreGuildId = config.allowedGuildIds?.[0] || config.clientId;
@@ -252,7 +255,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       }
 
       if (url.pathname === '/auth/code' && request.method === 'POST') {
-        if (request.headers.origin !== base.origin) throw httpError(403, 'Giriş isteği doğrulanamadı.');
+        if (!trustedOrigins.has(request.headers.origin)) throw httpError(403, 'Giriş isteği doğrulanamadı.');
         const body = await readJson(request);
         const supplied = typeof body.code === 'string' ? body.code.trim() : '';
         if (!/^[A-Za-z0-9_-]{40,64}$/u.test(supplied)) {
@@ -328,7 +331,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
       }
       if (!session) throw httpError(401, 'Discord hesabınızla giriş yapın.');
       if (!['GET', 'HEAD'].includes(request.method)) {
-        if (request.headers.origin !== base.origin || !constantEqual(request.headers['x-csrf-token'], session.csrf)) throw httpError(403, 'İstek doğrulanamadı. Sayfayı yenileyin.');
+        if (!trustedOrigins.has(request.headers.origin) || !constantEqual(request.headers['x-csrf-token'], session.csrf)) throw httpError(403, 'İstek doğrulanamadı. Sayfayı yenileyin.');
       }
       if (url.pathname === '/auth/logout' && request.method === 'POST') {
         deleteSession(session.id);
@@ -349,11 +352,49 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
+      const rpgMatch = /^\/api\/guilds\/(\d{17,20})\/rpg(?:\/([a-z-]+))?(?:\/([a-z-]+))?$/.exec(url.pathname);
+      if (rpgMatch) {
+        const [, guildId, area, operation] = rpgMatch;
+        const { member } = await authorizedGuild(guildId, session);
+        const user = member.user || session.user;
+        const avatar = typeof member.displayAvatarURL === 'function' ? member.displayAvatarURL({ extension: 'webp', size: 128 }) : null;
+        if (!area && request.method === 'GET') { json(response, 200, rpg.webState(guildId, user, { avatar })); return; }
+        if (request.method !== 'POST') throw httpError(405, 'Bu RPG işlemi desteklenmiyor.');
+        const body = await readJson(request);
+        const requestId = typeof body.requestId === 'string' && /^[A-Za-z0-9_-]{8,100}$/u.test(body.requestId) ? body.requestId : random();
+        let message;
+        try {
+          if (area === 'activity' && operation === 'start') {
+            const activity = rpg.startActivity(guildId, user, body.type, requestId);
+            message = activity.type === 'mine' ? 'Madencilik başladı.' : 'Garaj vardiyası başladı.';
+          } else if (area === 'activity' && operation === 'claim') message = rpg.claimActivity(guildId, user, requestId).result;
+          else if (area === 'shop' && operation === 'buy') message = rpg.act(guildId, user, 'buy', body.itemId, requestId);
+          else if (area === 'equipment' && operation === 'equip') message = rpg.equip(guildId, user, body.itemId, requestId);
+          else if (area === 'potion' && operation === 'use') message = rpg.act(guildId, user, 'potion', body.itemId, requestId);
+          else if (area === 'quest' && operation === 'claim') message = rpg.act(guildId, user, 'quest', body.questId, requestId);
+          else if (area === 'class' && operation === 'select') message = rpg.act(guildId, user, 'class', body.classId, requestId);
+          else if (area === 'battle' && operation === 'action') message = rpg.act(guildId, user, 'battle', { monster: body.monsterId, ...(body.skill ? { skill: body.skill } : {}) }, requestId);
+          else if (area === 'dungeon' && operation === 'start') message = rpg.act(guildId, user, 'dungeon', null, requestId);
+          else if (area === 'dungeon' && operation === 'action') {
+            const fight = rpg.profile(guildId, user).fight;
+            if (!fight) throw new RpgError('Devam eden bir zindan savaşın yok.');
+            message = rpg.act(guildId, user, 'dungeonTurn', { id: fight.id, turn: fight.turn, move: body.move }, requestId);
+          } else if (area === 'craft' && operation === 'create') message = rpg.act(guildId, user, 'craft', body.recipeId, requestId);
+          else if (area === 'daily' && operation === 'claim') message = rpg.act(guildId, user, 'daily', null, requestId);
+          else throw httpError(404, 'RPG işlemi bulunamadı.');
+        } catch (error) {
+          if (error instanceof RpgError) throw httpError(409, error.message);
+          throw error;
+        }
+        store.addLog(guildId, { type: 'rpg.web_action', actorId: session.user.id, message: `${session.user.name} web RPG işlemi yaptı.`, details: { actorName: session.user.name, area, operation } });
+        json(response, 200, { ok: true, message, state: rpg.webState(guildId, user, { avatar }) });
+        return;
+      }
       const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles|rpg))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
-      if (resource === 'rpg' && request.method === 'GET') { json(response, 200, rpgDashboard(store, guildId)); return; }
+      if (resource === 'rpg' && request.method === 'GET') { json(response, 200, rpg.webState(guildId, member.user || session.user, { avatar: typeof member.displayAvatarURL === 'function' ? member.displayAvatarURL({ extension: 'webp', size: 128 }) : null })); return; }
       if (!resource && request.method === 'GET') {
         await Promise.all([guild.channels.fetch(), guild.roles.fetch(), guild.emojis?.fetch?.() || Promise.resolve()]);
         const me = guild.members.me;

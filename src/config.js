@@ -19,6 +19,13 @@ export function readConfig(env = process.env) {
   try { url = new URL(publicUrl); } catch { throw new Error('PUBLIC_URL geçerli bir URL olmalı.'); }
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/' || !['http:', 'https:'].includes(url.protocol)) throw new Error('PUBLIC_URL yalnızca panelin kök adresi olmalı.');
   if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('Dışarıdan erişilen panel için PUBLIC_URL HTTPS olmalı.');
+  const panelOrigins = [url.origin];
+  for (const value of (env.PANEL_ORIGINS || '').split(',').map(item => item.trim()).filter(Boolean)) {
+    let origin;
+    try { origin = new URL(value); } catch { throw new Error('PANEL_ORIGINS yalnızca geçerli panel kök adresleri içermeli.'); }
+    if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/' || origin.protocol !== 'https:') throw new Error('PANEL_ORIGINS yalnızca HTTPS panel kök adresleri içermeli.');
+    if (!panelOrigins.includes(origin.origin)) panelOrigins.push(origin.origin);
+  }
   const sessionSecret = env.SESSION_SECRET?.trim();
   const clientSecret = env.DISCORD_CLIENT_SECRET?.trim();
   if (sessionSecret && sessionSecret.length < 32) throw new Error('SESSION_SECRET en az 32 karakter olmalı.');
@@ -32,7 +39,7 @@ export function readConfig(env = process.env) {
     allowedGuildIds: (env.ALLOWED_GUILD_IDS || '').split(',').map(id => id.trim()).filter(Boolean).map(id => readSnowflake(id, 'ALLOWED_GUILD_IDS')),
     ownerIds: (env.BOT_OWNER_IDS || '').split(',').map(id => id.trim()).filter(Boolean).map(id => readSnowflake(id, 'BOT_OWNER_IDS')),
     dashboardHost: env.DASHBOARD_HOST?.trim() || '127.0.0.1',
-    publicUrl: url.origin, clientSecret, sessionSecret,
+    publicUrl: url.origin, panelOrigins, clientSecret, sessionSecret,
     dataDir: resolve(env.DATA_DIR?.trim() || './data'),
     lavalink: lavalinkHost ? { host: lavalinkHost, port: readPort(env.LAVALINK_PORT, 2333, 'LAVALINK_PORT'), password: lavalinkPassword, secure: env.LAVALINK_SECURE === 'true' } : undefined,
     spotifyConfigured: env.SPOTIFY_ENABLED === 'true' && Boolean(env.SPOTIFY_CLIENT_ID?.trim() && env.SPOTIFY_CLIENT_SECRET?.trim()),

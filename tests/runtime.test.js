@@ -75,12 +75,24 @@ test('configuration accepts HTTPS OAuth, valid boundary ports and persistent sto
   assert.equal(config.clientId, CLIENT);
   assert.equal(config.guildId, GUILD);
   assert.equal(config.publicUrl, 'https://pit-stop.example.com');
+  assert.deepEqual(config.panelOrigins, ['https://pit-stop.example.com']);
   assert.equal(config.clientSecret, 'test-client-secret');
   assert.equal(config.sessionSecret.length, 32);
   assert.equal(config.dataDir, dataDir);
   assert.equal(config.healthPort, 1);
   assert.equal(config.dashboardPort, 65535);
   assert.equal(readSnowflake('18446744073709551615', 'ID'), '18446744073709551615');
+});
+
+test('additional panel origins accept secure fallback hosts and reject unsafe values', () => {
+  const config = readConfig({
+    ...credentials,
+    PUBLIC_URL: 'https://pit-stop.example.com',
+    PANEL_ORIGINS: 'https://pit-stop-fallback.example.com/, https://pit-stop.example.com',
+  });
+  assert.deepEqual(config.panelOrigins, ['https://pit-stop.example.com', 'https://pit-stop-fallback.example.com']);
+  assert.throws(() => readConfig({ ...credentials, PUBLIC_URL: 'https://pit-stop.example.com', PANEL_ORIGINS: 'http://unsafe.example.com' }), /PANEL_ORIGINS/);
+  assert.throws(() => readConfig({ ...credentials, PUBLIC_URL: 'https://pit-stop.example.com', PANEL_ORIGINS: 'https://safe.example.com/path' }), /PANEL_ORIGINS/);
 });
 
 test('loopback HTTP is accepted for SSH tunnel access', () => {

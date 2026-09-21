@@ -299,6 +299,17 @@ test('settings writes require both the session CSRF token and the configured ori
   assert.equal(fixture.store.getLogs(GUILD)[0].actorId, USER);
 });
 
+test('code and protected requests accept an explicitly configured fallback panel origin', async t => {
+  const fallback = 'https://pit-stop-fallback.example';
+  const fixture = await setup(t, { panelOrigins: [PUBLIC_ORIGIN, fallback] });
+  const session = await fixture.login();
+  const response = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { musicVolume: 68 }, { Origin: fallback });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).musicVolume, 68);
+  const rejected = await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { musicVolume: 69 }, { Origin: 'https://unknown.example' });
+  assert.equal(rejected.status, 403);
+});
+
 test('crew dashboard reads current comparisons and triggers a protected refresh', async t => {
   const fixture = await setup(t), session = await fixture.login();
   const current = await fixture.request(`/api/guilds/${GUILD}/crew`, { headers: { Cookie: session.cookie } });

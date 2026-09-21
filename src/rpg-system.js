@@ -100,7 +100,15 @@ export function world(time, guildId = '') {
   return { date: day, hour, timezone: 'Europe/Istanbul', night: hour < 6 || hour >= 20, weather, openHours, marketOpen: openHours.includes(hour) };
 }
 export function normalize(saved, name, time) {
-  const p = { name, coins: 0, xp: 0, wins: 0, losses: 0, sword: null, armor: null, helmet: null, gloves: null, boots: null, pants: null, cloak: null, inventory: [], cooldowns: {}, receipts: [], classId: null, hp: 100, regenAt: time, bag: {}, materials: {}, daily: {}, pvpWins: 0, pvpLosses: 0, ...saved };
+  const p = { name, coins: 0, xp: 0, wins: 0, losses: 0, bossKills: 0, sword: null, armor: null, helmet: null, gloves: null, boots: null, pants: null, cloak: null, pickaxe: null, axe: null, inventory: [], cooldowns: {}, receipts: [], history: [], economy: { earned: 0, spent: 0 }, classId: null, hp: 100, regenAt: time, bag: {}, materials: {}, daily: {}, pvpWins: 0, pvpLosses: 0, ...saved };
+  p.inventory = Array.isArray(p.inventory) ? p.inventory : [];
+  p.receipts = Array.isArray(p.receipts) ? p.receipts : [];
+  p.history = Array.isArray(p.history) ? p.history : [];
+  p.cooldowns = p.cooldowns && typeof p.cooldowns === 'object' ? p.cooldowns : {};
+  p.bag = p.bag && typeof p.bag === 'object' ? p.bag : {};
+  p.materials = p.materials && typeof p.materials === 'object' ? p.materials : {};
+  p.daily = p.daily && typeof p.daily === 'object' ? p.daily : {};
+  p.economy = p.economy && typeof p.economy === 'object' ? { earned: Number(p.economy.earned)||0, spent: Number(p.economy.spent)||0 } : { earned: 0, spent: 0 };
   p.name = name || p.name;
   const ticks = Math.max(0, Math.floor((time - p.regenAt) / 1800_000));
   p.hp = Math.min(100, p.hp + ticks * 10);
@@ -199,7 +207,7 @@ export function advancedAction(p, action, choice, { time, roll, guildId, interac
     else { damage = roll(1, 21) + power(p); if (itemById(p.sword)?.cursed && roll(1, 101) <= 25) damage = Math.max(1, damage - 10); f.hp = Math.max(0, f.hp - damage); }
     f.turn++;
     if (!f.hp) {
-      credit(p, 600, 250); p.wins++; p.materials.fragment = (p.materials.fragment || 0) + 1;
+      credit(p, 600, 250); p.wins++; p.bossKills=(p.bossKills||0)+1; p.materials.fragment = (p.materials.fragment || 0) + 1;
       const drop = roll(1, 101) <= 25 + (p.luckUntil > time ? 20 : 0);
       let loot = '1 boss parçası';
       const dungeonItems = ITEMS.filter(item => item.source === 'dungeon' && !p.inventory.includes(item.id));

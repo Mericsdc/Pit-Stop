@@ -46,7 +46,7 @@ const rpg = createRpg(store, { client, logger: log });
 const allCommands = [...commands, ...music.commands, ...features.commands, ...rpg.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
 const removeReactionRoles = installReactionRoles(client, store, { logger: log });
-const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, config, logger: log });
+const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, rpg, config, logger: log });
 let stopping = false;
 let disconnectedAt;
 
