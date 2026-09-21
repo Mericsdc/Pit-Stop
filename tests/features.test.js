@@ -8,14 +8,14 @@ import { blockedHost, createSpamDetector, extractHosts, parseReminder } from '..
 import { validateGuildSettings } from '../src/dashboard.js';
 
 const G = '1400000000000000000', U = '1400000000000000001', C = '1400000000000000002', R = '1400000000000000003', B = '1400000000000000004';
-function fixture(t) {
+function fixture(t, { config = {} } = {}) {
   let time = 1000000; const store = createStore(':memory:'), client = new EventEmitter(), sent = [], timeouts = [], deleted = [];
   const user = { id: U, username: 'Pilot', send: async payload => sent.push(payload) };
   const member = { id: U, user, voice: { channelId: 'voice' }, roles: { cache: new Collection() }, permissions: new PermissionsBitField(), moderatable: true, timeout: async (ms, reason) => timeouts.push({ ms, reason }), send: user.send };
   const channel = { id: C, type: ChannelType.GuildText, isTextBased: () => true, permissionsFor: () => new PermissionsBitField(P.ViewChannel), send: user.send };
   const guild = { id: G, name: 'Garaj', members: { cache: new Collection([[U, member]]), fetch: async () => member }, channels: { fetch: async () => channel } };
   client.guilds = { cache: new Collection([[G, guild]]) }; client.users = { cache: new Collection([[U, user]]), fetch: async () => user }; client.user = { id: B }; client.isReady = () => true;
-  const features = createFeatures(client, store, {}, { now: () => time });
+  const features = createFeatures(client, store, config, { now: () => time });
   const message = content => ({ id: String(time), guildId: G, guild, channelId: C, content, member, author: user, attachments: new Collection(), delete: async () => deleted.push(content) });
   t.after(() => { features.close(); store.close(); });
   return { features, store, sent, deleted, timeouts, member, guild, user, channel, client, message, advance: ms => { time += ms; }, now: () => time };
@@ -85,7 +85,8 @@ test('multiple autoroles retain backward compatibility and cannot clear enabled 
 });
 
 test('panel login code is sent in a Discord copyable code block', async t => {
-  const f = fixture(t), command = f.features.commands.find(item => item.data.toJSON().name === 'panel-giris');
+  const f = fixture(t, { config: { publicUrl: 'https://pit-stop.example.com', panelOrigins: ['https://pit-stop.example.com', 'https://pit-stop-fallback.example.com'] } });
+  const command = f.features.commands.find(item => item.data.toJSON().name === 'panel-giris');
   f.member.permissions = new PermissionsBitField(P.ManageGuild);
   let reply;
   await command.execute({
@@ -94,6 +95,8 @@ test('panel login code is sent in a Discord copyable code block', async t => {
   });
   assert.match(reply.content, /Pit-Stop giriş kodunuz:\n\n```\n[A-Za-z0-9_-]{43}\n```/u);
   assert.match(reply.content, /sağındaki kopyalama düğmesini/u);
+  assert.match(reply.content, /Panel: <https:\/\/pit-stop\.example\.com>/u);
+  assert.match(reply.content, /GoodbyDPI yedek giriş: <https:\/\/pit-stop-fallback\.example\.com>/u);
   assert.equal(f.store.listRecords(G, 'panel_login_code').length, 1);
 });
 test('every autorole is validated against actor and bot hierarchy', async () => {

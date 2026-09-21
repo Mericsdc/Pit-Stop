@@ -206,7 +206,11 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
       const expiresAt = now() + Math.min(5, Math.max(1, Number(s.panelCodeMinutes) || 2)) * 60_000;
       store.putRecord(i.guildId, 'panel_login_code', hash, { userId: i.user.id, userName: userLabel(i.user), expiresAt, createdAt: now() });
       record(i.guildId, 'panel.code_created', 'Tek kullanımlık panel giriş kodu üretildi.', i.user.id, { actorName: userLabel(i.user), expiresAt });
-      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\n\`\`\`\n${token}\n\`\`\`\nKod bloğunun sağındaki kopyalama düğmesini kullanabilirsiniz.\n\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer, mesaj otomatik silinir ve kod yalnızca bir kez kullanılabilir. Panel oturumu başarılı girişten sonra en fazla 8 saat açıktır. Bu kodu kimseyle paylaşmayın.` });
+      const panelAddresses = (config.panelOrigins?.length ? config.panelOrigins : [config.publicUrl]).filter(Boolean);
+      const addressText = panelAddresses.length > 1
+        ? `Panel: <${panelAddresses[0]}>\nGoodbyDPI yedek giriş: <${panelAddresses[1]}>\n`
+        : panelAddresses[0] ? `Panel: <${panelAddresses[0]}>\n` : '';
+      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\n\`\`\`\n${token}\n\`\`\`\nKod bloğunun sağındaki kopyalama düğmesini kullanabilirsiniz.\n\n${addressText}\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer, mesaj otomatik silinir ve kod yalnızca bir kez kullanılabilir. Panel oturumu başarılı girişten sonra en fazla 8 saat açıktır. Bu kodu kimseyle paylaşmayın.` });
       const deletion = setTimeout(() => void i.deleteReply().catch(() => {}), Math.max(0, expiresAt - now()));
       deletion.unref?.();
     } },
