@@ -165,7 +165,7 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.equal((await fixture.request(path)).status, 401);
   const session = await fixture.login();
   const headers = { Cookie: session.cookie };
-  const player = { name: 'Pilot', xp: 40, coins: 100, wins: 1, losses: 0, sword: 'demir-kilic', armor: null, receipts: ['private'], cooldowns: { work: 123 } };
+  const player = { name: 'Pilot', xp: 40, coins: 1000, wins: 1, losses: 0, sword: 'demir-kilic', armor: null, receipts: ['private'], cooldowns: { work: 123 }, garage: { xp: 250 } };
   fixture.store.putRecord(GUILD, 'rpg_player', USER, player);
   fixture.store.putRecord(GUILD, 'rpg_player', ROLE, { ...player, name: 'Champion', xp: 400 });
   fixture.store.putRecord(OTHER_GUILD, 'rpg_player', USER, { ...player, name: 'Other server', xp: 99999 });
@@ -177,13 +177,21 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
   assert.equal(data.items.length, 56);
   assert.equal(data.monsters.length, 6);
-  assert.equal(data.commands.length, 24);
+  assert.equal(data.commands.length, 34);
   assert.equal(data.classes.length, 3);
   assert.equal(data.recipes.length, 9);
   assert.equal(data.world.timezone, 'Europe/Istanbul');
+  assert.equal(data.garage.level, 2);
   assert.ok(data.commands.some(c => c.usage === '/rpg-rehber'));
   assert.ok(!JSON.stringify(data).includes('receipts'));
   assert.ok(!JSON.stringify(data).includes('cooldowns'));
+  const garageResponse = await fixture.request(`${path}/garage/action`, {
+    method: 'POST',
+    headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: 'garage_buy_test', action: 'garageBuy', upgradeId: 'krom-set' }),
+  });
+  assert.equal(garageResponse.status, 200);
+  assert.ok((await garageResponse.json()).state.garage.owned.includes('krom-set'));
   assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/rpg`, { headers })).status, 403);
 });
 

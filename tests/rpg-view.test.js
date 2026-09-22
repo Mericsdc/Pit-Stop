@@ -37,3 +37,13 @@ test('RPG view uses raw timestamps, separate crafting screen and no duplicate pr
   assert.doesNotMatch(profile, /<header class="rpg-hud">/);
   assert.match(profile, /OYUNCU PROFİLİ/);
 });
+
+test('boss outcome stays visible inside the RPG screen after the fight ends', t => {
+  const store = createStore(':memory:');
+  t.after(() => store.close());
+  const state = createRpg(store).webState(GUILD, user);
+  const html = renderRpgContent(state, helpers, 'dungeon', { tone: 'success', message: '🏆 Boss yenildi! +600 altın · +250 XP.' });
+  assert.match(html, /class="rpg-result success"/u);
+  assert.match(html, /Boss yenildi!/u);
+  assert.match(html, /data-rpg-dismiss-result/u);
+});

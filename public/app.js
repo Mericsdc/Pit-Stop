@@ -20,7 +20,7 @@ for (const media of document.querySelectorAll('img, video')) media.draggable = f
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0 };
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0, rpgLastResult: null };
 let guildLoadVersion = 0;
 const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
 const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
@@ -243,7 +243,7 @@ function overviewLogList(logs) {
 function renderRpg() {
   return `<div id="rpg-content"><div class="loading">RPG karakterin hazırlanıyor…</div></div><details class="card rpg-admin-settings"><summary>RPG yönetim ayarları</summary><form id="rpg-settings-form" class="form-stack"><p class="muted tiny">Boss zaferleri ve üretilen efsanevi eşyalar seçilen Discord kanalında kutlanır.</p><label>Duyuru kanalı<select id="rpg-announcement-channel">${channelOptions(state.guild.settings.rpgAnnouncementChannelId)}</select></label><div class="form-actions"><button type="submit" class="button primary">Duyuru ayarını kaydet</button></div></form></details>`;
 }
-function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }, state.rpgSection); }
+function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }, state.rpgSection, state.rpgLastResult); }
 let rpgLoading = false;
 let lastRpgRefreshAt = 0;
 function renderRpgState() {
@@ -271,8 +271,14 @@ async function rpgRequest(path, body = {}) {
   const result = await guildApi(`rpg/${path}`, { method: 'POST', body: JSON.stringify({ ...body, requestId: rpgRequestId() }) });
   state.rpgData = result.state;
   state.rpgClockOffset = Number(result.state?.serverTime || Date.now()) - Date.now();
+  const message = String(result.message || 'RPG işlemi tamamlandı.').replaceAll(/[*_`]/g, '');
+  state.rpgLastResult = {
+    message,
+    tone: /Boss yenildi|Kazandın|başarıyla|tamamlandı|satın aldın|işe alındı|toplandı/iu.test(message) ? 'success'
+      : /Yenildin|sona erdi|başarısız|kaybettin|ceza|masraf|sabotaj/iu.test(message) ? 'error' : 'info',
+  };
   renderRpgState();
-  notice(String(result.message || 'RPG işlemi tamamlandı.').replaceAll(/[*_`]/g, '').split('\n')[0]);
+  notice(message);
   return result;
 }
 function updateRpgTimers() {
@@ -455,7 +461,7 @@ function render() {
 }
 async function loadGuild(guildId) {
   const version = ++guildLoadVersion;
-  state.guild = null; state.panelAccess = null; state.reactionRoleRecords = []; state.rpgData = null; state.rpgSection = 'home';
+  state.guild = null; state.panelAccess = null; state.reactionRoleRecords = []; state.rpgData = null; state.rpgSection = 'home'; state.rpgLastResult = null;
   $('#view-content').innerHTML = '<div class="loading">Sunucu bilgileri yükleniyor…</div>';
   const guild = await api(`/api/guilds/${guildId}`);
   if (version !== guildLoadVersion) return;
@@ -499,6 +505,7 @@ document.addEventListener('click', async event => {
     if (button.id === 'sidebar-collapse') { setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'), true); return; }
     if (button.id === 'menu-toggle') { setMenuOpen(!document.body.classList.contains('menu-open')); return; }
     if (button.id === 'menu-backdrop') { setMenuOpen(false); return; }
+    if (button.dataset.rpgDismissResult !== undefined) { state.rpgLastResult = null; renderRpgState(); return; }
     if (button.id === 'toggle-code') { const input = $('#login-code'), showing = input.type === 'text'; input.type = showing ? 'password' : 'text'; button.textContent = showing ? 'Göster' : 'Gizle'; button.setAttribute('aria-label', showing ? 'Kodu göster' : 'Kodu gizle'); return; }
     if (button.dataset.rpgSection) { state.rpgSection = button.dataset.rpgSection; renderRpgState(); $('#rpg-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (button.dataset.rpgFilter) {
@@ -536,6 +543,14 @@ document.addEventListener('click', async event => {
       if (action === 'dungeon-start') await rpgRequest('dungeon/start');
       if (action === 'dungeon-move') await rpgRequest('dungeon/action', { move: button.dataset.move });
       if (action === 'craft') await rpgRequest('craft/create', { recipeId: button.dataset.recipeId });
+      if (action === 'garage-buy') await rpgRequest('garage/action', { action: 'garageBuy', upgradeId: button.dataset.upgradeId });
+      if (action === 'hire-employee') await rpgRequest('garage/action', { action: 'hireEmployee' });
+      if (action === 'employee-bonus') await rpgRequest('garage/action', { action: 'employeeBonus' });
+      if (action === 'employee-leave') await rpgRequest('garage/action', { action: 'employeeLeave' });
+      if (action === 'employee-collect') await rpgRequest('garage/action', { action: 'employeeCollect' });
+      if (action === 'auto-work') await rpgRequest('garage/action', { action: 'autoWork' });
+      if (action === 'employee-repair') await rpgRequest('garage/action', { action: 'repairEmployee' });
+      if (action === 'roadside') await rpgRequest('garage/action', { action: 'roadside' });
       return;
     }
     if (button.dataset.view || button.dataset.go) { if (state.guild) { changeView(button.dataset.view || button.dataset.go); setMenuOpen(false); } return; }
@@ -588,7 +603,7 @@ document.addEventListener('click', async event => {
     }
     if (button.dataset.control) { button.disabled = true; state.guild.music = await guildApi('music', { method: 'POST', body: JSON.stringify({ action: button.dataset.control }) }); render(); notice('Oynatıcı güncellendi.'); }
     if (button.id === 'revoke-sessions') { if (!confirm('Tüm aktif panel oturumları kapatılsın mı? Bu oturum da kapanacaktır.')) return; await guildApi('panel-access', { method: 'DELETE', body: '{}' }); location.reload(); }
-  } catch (error) { notice(error.message, true); }
+  } catch (error) { if (state.view === 'rpg') renderRpgState(); notice(error.message, true); }
   finally { button.disabled = false; }
 });
 document.addEventListener('pointerup', event => saveOverviewHeight(event.composedPath().find(node => node?.matches?.('[data-dashboard-size]'))));

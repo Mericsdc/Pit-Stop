@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { normalizeGarage } from './rpg-garage.js';
 
 export const ITEMS = Object.freeze([
   { id: 'demir-kilic', name: 'Demir kılıç', slot: 'sword', kind: 'Kılıç', tier: 1, bonus: 2, price: 250, icon: '/assets/rpg/demir-kilic.webp' },
@@ -118,6 +119,7 @@ export function normalize(saved, name, time) {
   if (ticks) p.regenAt += ticks * 1800_000;
   if (p.quest?.date !== dateKey(time)) p.quest = { date: dateKey(time), earned: 0, goblins: 0, claimed: [] };
   if (p.fight?.expiresAt <= time) p.fight = null;
+  normalizeGarage(p, time);
   return p;
 }
 export function credit(p, gold, xp = 0, quest = true) {

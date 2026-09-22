@@ -380,6 +380,10 @@ export function createDashboard({ client, store, music, features, crew, boostedE
             const fight = rpg.profile(guildId, user).fight;
             if (!fight) throw new RpgError('Devam eden bir zindan savaşın yok.');
             message = rpg.act(guildId, user, 'dungeonTurn', { id: fight.id, turn: fight.turn, move: body.move }, requestId);
+          } else if (area === 'garage' && operation === 'action') {
+            const allowed = new Set(['garageBuy', 'hireEmployee', 'employeeBonus', 'employeeLeave', 'employeeCollect', 'autoWork', 'repairEmployee', 'roadside']);
+            if (!allowed.has(body.action)) throw new RpgError('Geçersiz garaj işlemi.');
+            message = rpg.act(guildId, user, body.action, body.upgradeId || null, requestId);
           } else if (area === 'craft' && operation === 'create') message = rpg.act(guildId, user, 'craft', body.recipeId, requestId);
           else if (area === 'daily' && operation === 'claim') message = rpg.act(guildId, user, 'daily', null, requestId);
           else throw httpError(404, 'RPG işlemi bulunamadı.');
