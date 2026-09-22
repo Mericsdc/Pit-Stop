@@ -536,7 +536,22 @@ document.addEventListener('click', async event => {
         if (!confirm(`${itemName} ${price} altına satılacak. Bu işlemi onaylıyor musunuz?`)) return;
         button.disabled = true; await rpgRequest('shop/sell', { itemId: button.dataset.itemId }); return;
       }
+      if (action === 'car-buy' && !confirm('Bu bozuk aracı satın alıp garajına almak istiyor musun?')) return;
+      if (action === 'car-list' && !confirm('Tamirli aracın 30 dakikalık açık artırmaya çıkarılacak. Onaylıyor musun?')) return;
+      if (action === 'auction-bid') {
+        const minimum = Number(button.dataset.currentBid) + 50;
+        const input = prompt(`Teklifin kaç PitCoin olsun? En az ${number(minimum)} PitCoin.`, String(minimum));
+        if (input == null) return;
+        const amount = Number(input.trim());
+        if (!Number.isSafeInteger(amount) || amount < minimum) { notice(`En az ${number(minimum)} PitCoin teklif girmelisin.`); return; }
+        button.disabled = true; await rpgRequest('vehicles/bid', { auctionId: button.dataset.auctionId, amount }); return;
+      }
       button.disabled = true;
+      if (action === 'part-buy') await rpgRequest('vehicles/action', { action: 'partBuy', choiceId: button.dataset.choiceId });
+      if (action === 'job-repair') await rpgRequest('vehicles/action', { action: 'jobRepair', choiceId: button.dataset.choiceId });
+      if (action === 'car-buy') await rpgRequest('vehicles/action', { action: 'carBuy', choiceId: button.dataset.choiceId });
+      if (action === 'car-repair') await rpgRequest('vehicles/action', { action: 'carRepair', choiceId: button.dataset.carId });
+      if (action === 'car-list') await rpgRequest('vehicles/list', { carId: button.dataset.carId });
       if (action === 'start-activity') await rpgRequest('activity/start', { type: button.dataset.activityType });
       if (action === 'claim-activity') await rpgRequest('activity/claim');
       if (action === 'battle' || action === 'skill-battle') await rpgRequest('battle/action', { monsterId: button.dataset.monsterId, ...(action === 'skill-battle' ? { skill: button.dataset.skill } : {}) });

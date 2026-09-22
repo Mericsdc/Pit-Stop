@@ -61,3 +61,18 @@ test('quests show difficulty groups, daily timer and three dungeon levels', t =>
   for (const difficulty of ['kolay', 'orta', 'zor']) assert.match(dungeon, new RegExp(`data-difficulty="${difficulty}"`));
   assert.match(dungeon, /Saf Işığın Muhafızı ekipmanları/u);
 });
+
+test('garage links to the vehicle dashboard with daily jobs, depot and auction controls', t => {
+  const store = createStore(':memory:');
+  t.after(() => store.close());
+  const state = createRpg(store).webState(GUILD, user);
+  const html = renderRpgContent(state, helpers, 'vehicles');
+  assert.match(html, /data-rpg-section="vehicles"/u);
+  assert.match(html, /rpg-garage-vehicles-link/u);
+  assert.match(html, /data-rpg-screen="vehicles"/u);
+  assert.match(html, /GÜNLÜK TAMİR İŞLERİ/u);
+  assert.match(html, /PARÇA DEPOSU/u);
+  assert.match(html, /data-rpg-action="part-buy"/u);
+  assert.match(html, /data-rpg-action="job-repair"/u);
+  assert.doesNotMatch(html, /NaN/u);
+});

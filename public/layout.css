@@ -424,6 +424,34 @@ body:not(.logged-out) #notice.notice { position: fixed; z-index: 2000; right: 24
 .rpg-upgrade-grid strong { font-size: 11px; }
 .rpg-upgrade-grid small, .rpg-upgrade-grid em { color: var(--muted); font-size: 9px; font-style: normal; }
 .rpg-upgrade-grid .button { min-height: 34px; padding: 6px 10px; font-size: 10px; }
+.rpg-garage-vehicles-link { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.rpg-garage-vehicles-link span { color: var(--cyan); font-size: 10px; font-weight: 700; letter-spacing: 1.2px; }
+.rpg-garage-vehicles-link h3 { margin: 4px 0; }
+.rpg-garage-vehicles-link p { margin: 0; color: var(--muted); }
+.rpg-vehicle-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rpg-vehicle-overview .rpg-panel { display: grid; align-content: start; gap: 8px; }
+.rpg-vehicle-overview p { margin: 0; color: var(--muted); }
+.rpg-vehicle-overview strong { color: var(--cyan); font-size: 18px; }
+.rpg-vehicle-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.rpg-vehicle-card { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--raised); }
+.rpg-vehicle-card-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rpg-vehicle-card-head > span { display: grid; flex: 0 0 48px; width: 48px; height: 48px; place-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 26px; }
+.rpg-vehicle-card-head > div { min-width: 0; }
+.rpg-vehicle-card small, .rpg-part-grid small { display: block; color: var(--muted); font-size: 11px; }
+.rpg-vehicle-card h4 { overflow: hidden; margin: 3px 0 0; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.rpg-vehicle-card p { min-height: 32px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.rpg-vehicle-card p .ready { color: var(--text); }
+.rpg-vehicle-card p .missing { color: #e0a2a2; }
+.rpg-vehicle-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rpg-vehicle-card-footer strong { font-size: 12px; }
+.rpg-vehicle-card-footer .button { flex: 0 0 auto; }
+.rpg-part-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.rpg-part-grid article { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--raised); }
+.rpg-part-grid article > div { flex: 1; min-width: 0; }
+.rpg-part-grid article strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.rpg-part-symbol { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; color: var(--cyan); font-size: 20px; }
+.rpg-auction-history { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 16px; color: var(--muted); font-size: 11px; }
+.rpg-auction-history strong { color: var(--text); }
 
 @media (max-width: 1180px) {
   .rpg-game { grid-template-columns: 176px minmax(0, 1fr); }
@@ -453,10 +481,13 @@ body:not(.logged-out) #notice.notice { position: fixed; z-index: 2000; right: 24
   .rpg-craft-list { grid-template-columns: 1fr; }
   .rpg-garage-columns, .rpg-upgrade-grid { grid-template-columns: 1fr; }
   .rpg-garage-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rpg-part-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 600px) {
   .rpg-hud, .rpg-panel, .rpg-game-card, .rpg-monster, .rpg-battle-stage, .rpg-profile-hero { padding: 14px; }
   .rpg-shop-grid, .rpg-monster-grid { grid-template-columns: 1fr; }
+  .rpg-vehicle-overview, .rpg-vehicle-grid, .rpg-part-grid { grid-template-columns: 1fr; }
+  .rpg-garage-vehicles-link, .rpg-vehicle-card-footer { align-items: stretch; flex-direction: column; }
   .rpg-resource-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rpg-equipped-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rpg-equipment-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }

@@ -77,6 +77,10 @@ Kanal boşsa yalnızca olay kayıtlarında tutulur. Transfer ve düello sonuçla
 Yeni alanlar eski oyuncu kayıtlarına okunurken varsayılanlarla eklenir; mevcut XP, altın, ekipman ve beklemeler korunur.
 Bu sürüm şema değişikliği veya ek environment variable gerektirmez.
 
+### Garaj araçları ve açık artırma (v1.10)
+
+**Garajım → Araçlarım** bölümünde her İstanbul gününde üç müşteri tamiri yenilenir. Tamirler depodaki gerekli parçaları tüketir; vardiyalar da zaman zaman yedek parça kazandırır. Oyuncu parçaları PitCoin ile alabilir, garaj seviyesi ve boş park yeri uygunsa bozuk araç satın alıp tamir edebilir. Tamirli araçlar 30 dakikalık açık artırmaya çıkarılır. Diğer oyuncular mevcut tekliften en az 50 PitCoin yüksek teklif verir; teklif tutarı geçici olarak ayrılır ve geçilirse iade edilir. Teklif gelmezse başlangıç tutarından oyun içi alıcıya satılır. Süre dolunca ilk panel veya Discord görüntülemesinde satış tek işlemde sonuçlandırılır. Web ve Discord aynı oyuncu, depo, araç ve açık artırma kayıtlarını kullanır. `/araçlarım`, `/parça-al`, `/müşteri-tamir`, `/araba-al`, `/araba-tamir`, `/araba-sat`, `/açık-artırma` ve `/teklif-ver` komutları da kullanılabilir.
+
 ## Web sitesi ve canlı panel
 
 GitHub Pages adresi: **https://mericsdc.github.io/Pit-Stop/**
