@@ -209,10 +209,14 @@ export function createFeatures(client, store, config = {}, { logger = () => {}, 
       const panelAddresses = (config.panelOrigins?.length ? config.panelOrigins : [config.publicUrl]).filter(Boolean);
       const addressText = panelAddresses.map((address, index) => {
         if (index === 0) return `Panel: <${address}>`;
-        if (new URL(address).hostname.endsWith('.trycloudflare.com')) return `Cloudflare yedek giriş: <${address}>`;
-        return `GoodbyDPI yedek giriş: <${address}>`;
+        if (new URL(address).hostname.endsWith('.trycloudflare.com')) return `Geçici Cloudflare yedek giriş: <${address}>`;
+        return `Sabit GoodbyDPI yedek giriş: <${address}>`;
       }).join('\n');
-      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\n\`\`\`\n${token}\n\`\`\`\nKod bloğunun sağındaki kopyalama düğmesini kullanabilirsiniz.\n\n${addressText}\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer, mesaj otomatik silinir ve kod yalnızca bir kez kullanılabilir. Panel oturumu başarılı girişten sonra en fazla 8 saat açıktır. Bu kodu kimseyle paylaşmayın.` });
+      const hasQuickTunnel = panelAddresses.some(address => new URL(address).hostname.endsWith('.trycloudflare.com'));
+      const quickTunnelNote = hasQuickTunnel
+        ? '\n\nCloudflare hızlı tünel adresi sunucu yeniden başladığında değişebilir. Güncel adresi almak için `/panel-giris` komutunu yeniden kullanın.'
+        : '';
+      await i.reply({ ...ephemeral, content: `Pit-Stop giriş kodunuz:\n\n\`\`\`\n${token}\n\`\`\`\nKod bloğunun sağındaki kopyalama düğmesini kullanabilirsiniz.\n\n${addressText}${quickTunnelNote}\nKod <t:${Math.floor(expiresAt / 1000)}:R> sona erer, mesaj otomatik silinir ve kod yalnızca bir kez kullanılabilir. Panel oturumu başarılı girişten sonra en fazla 8 saat açıktır. Bu kodu kimseyle paylaşmayın.` });
       const deletion = setTimeout(() => void i.deleteReply().catch(() => {}), Math.max(0, expiresAt - now()));
       deletion.unref?.();
     } },

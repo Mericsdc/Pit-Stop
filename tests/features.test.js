@@ -96,8 +96,9 @@ test('panel login code is sent in a Discord copyable code block', async t => {
   assert.match(reply.content, /Pit-Stop giriş kodunuz:\n\n```\n[A-Za-z0-9_-]{43}\n```/u);
   assert.match(reply.content, /sağındaki kopyalama düğmesini/u);
   assert.match(reply.content, /Panel: <https:\/\/pit-stop\.example\.com>/u);
-  assert.match(reply.content, /GoodbyDPI yedek giriş: <https:\/\/pit-stop-fallback\.example\.com>/u);
-  assert.match(reply.content, /Cloudflare yedek giriş: <https:\/\/safe-tunnel\.trycloudflare\.com>/u);
+  assert.match(reply.content, /Sabit GoodbyDPI yedek giriş: <https:\/\/pit-stop-fallback\.example\.com>/u);
+  assert.match(reply.content, /Geçici Cloudflare yedek giriş: <https:\/\/safe-tunnel\.trycloudflare\.com>/u);
+  assert.match(reply.content, /Cloudflare hızlı tünel adresi sunucu yeniden başladığında değişebilir/u);
   assert.equal(f.store.listRecords(G, 'panel_login_code').length, 1);
 });
 test('every autorole is validated against actor and bot hierarchy', async () => {
