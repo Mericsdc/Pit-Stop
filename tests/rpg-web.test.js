@@ -33,6 +33,30 @@ test('web activity persists, uses server time and rewards only once', t => {
   assert.equal(store.listRecords(GUILD, 'rpg_transaction').filter(item => item.playerId === user.id).length, 2);
 });
 
+test('Discord and website use the same exclusive activity lock', t => {
+  const { rpg, advance } = fixture(t);
+  rpg.startActivity(GUILD, user, 'mine', 'shared_mine', 'web');
+  assert.throws(() => rpg.act(GUILD, user, 'battle', 'goblin', 'discord_battle'), /başka bir etkinlik/);
+  assert.throws(() => rpg.act(GUILD, user, 'dungeon', 'kolay', 'discord_dungeon'), /başka bir etkinlik/);
+  assert.throws(() => rpg.startActivity(GUILD, user, 'work', 'discord_work', 'discord'), /başka bir işlem/);
+  advance(15 * 60_000);
+  rpg.claimActivity(GUILD, user, 'shared_claim');
+  assert.match(rpg.act(GUILD, user, 'battle', 'goblin', 'battle_after_claim'), /Goblin/);
+});
+
+test('daily reward state exposes an exact server countdown', t => {
+  const { rpg, advance } = fixture(t);
+  let state = rpg.webState(GUILD, user);
+  assert.equal(state.player.daily.available, true);
+  assert.equal(state.player.daily.nextAt, state.serverTime);
+  rpg.act(GUILD, user, 'daily', null, 'daily_one');
+  state = rpg.webState(GUILD, user);
+  assert.equal(state.player.daily.available, false);
+  assert.equal(state.player.daily.nextAt - state.serverTime, 24 * 60 * 60_000);
+  advance(24 * 60 * 60_000);
+  assert.equal(rpg.webState(GUILD, user).player.daily.available, true);
+});
+
 test('website and Discord actions share one player, inventory and economy ledger', t => {
   const { store, rpg, advance } = fixture(t);
   store.putRecord(GUILD, 'rpg_player', user.id, { ...rpg.profile(GUILD, user), coins: 2500 });

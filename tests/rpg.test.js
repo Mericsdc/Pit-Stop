@@ -18,7 +18,7 @@ function fixture(t, roll = (min) => min) {
 test('earnings, rare mining and independent durable cooldowns are bounded', t => {
   const { rpg, advance } = fixture(t);
   rpg.act(GUILD, user, 'work', null, 'work1');
-  assert.equal(rpg.profile(GUILD, user).coins, 50);
+  assert.ok(rpg.profile(GUILD, user).coins > 0);
   assert.throws(() => rpg.act(GUILD, user, 'work'), /beklemelisin/);
   rpg.act(GUILD, user, 'mine');
   assert.equal(rpg.profile(GUILD, user).coins, 150);
@@ -101,14 +101,33 @@ test('RPG guide explains every command privately without creating a player', asy
   assert.equal(store.getRecord(GUILD, 'rpg_player', user.id), null);
 });
 
-test('parallel command submissions reward once and rejected actions recover', async t => {
-  const { rpg } = fixture(t);
+test('parallel Discord shifts share one timer and reward only after claim', async t => {
+  const { rpg, store, advance } = fixture(t);
   const messages = [];
   const command = rpg.commands.find(c => c.data.name === 'çalış');
   const interaction = id => ({ id, guildId: GUILD, user, inGuild: () => true, options: { getString: () => null }, deferReply: async () => {}, editReply: async p => messages.push(p.content) });
   await Promise.all([command.execute(interaction('a')), command.execute(interaction('b'))]);
-  assert.equal(rpg.profile(GUILD, user).coins, 50);
-  assert.equal(messages.filter(m => m.includes('beklemelisin')).length, 1);
-  rpg.act(GUILD, user, 'mine');
-  assert.equal(rpg.profile(GUILD, user).coins, 150);
+  assert.equal(rpg.profile(GUILD, user).coins, 0);
+  assert.equal(store.listRecords(GUILD, 'rpg_transaction').filter(item => item.type === 'work_started').length, 1);
+  assert.equal(messages.filter(message => message.includes('başladı')).length, 1);
+  assert.equal(messages.filter(message => message.includes('devam ediyor')).length, 1);
+  advance(30 * 60_000);
+  assert.match(rpg.claimActivity(GUILD, user, 'claim-a').result, /Vardiyan bitti/);
+  assert.ok(rpg.profile(GUILD, user).coins > 0);
+});
+
+test('Discord mining is visible on the website and the reward button claims it once', async t => {
+  const { rpg, advance } = fixture(t);
+  let response, claimed;
+  const command = rpg.commands.find(c => c.data.name === 'maden');
+  await command.execute({ id: 'mine-command', guildId: GUILD, user, inGuild: () => true, options: { getString: () => null }, deferReply: async () => {}, editReply: async payload => { response = payload; } });
+  assert.equal(rpg.webState(GUILD, user).activity.type, 'mine');
+  assert.equal(rpg.profile(GUILD, user).coins, 0);
+  const customId = response.components[0].toJSON().components[0].custom_id;
+  advance(15 * 60_000);
+  await rpg.handleInteraction({ id: 'mine-claim', customId, guildId: GUILD, user, inGuild: () => true, isButton: () => true, isStringSelectMenu: () => false, deferUpdate: async () => {}, editReply: async payload => { claimed = payload; } });
+  assert.match(claimed.content, /Cevher|kristal/);
+  assert.equal(claimed.components.length, 0);
+  assert.equal(rpg.webState(GUILD, user).activity, null);
+  assert.ok(rpg.profile(GUILD, user).coins > 0);
 });

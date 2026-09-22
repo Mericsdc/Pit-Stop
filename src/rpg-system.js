@@ -73,6 +73,11 @@ export const MONSTERS = Object.freeze([
   { id: 'golem', name: 'Demir golem', defense: 13, reward: 360, xp: 500, recommendedLevel: 9 },
   { id: 'ejderha', name: 'Garaj ejderhası', defense: 15, reward: 450, xp: 750, recommendedLevel: 12 },
 ]);
+export const DUNGEONS = Object.freeze([
+  { id: 'kolay', label: 'Kolay', name: 'Terk Edilmiş Servis Tüneli', minLevel: 1, hp: 70, attack: 5, maxTurns: 18, gold: 280, xp: 160, fragments: 1, dropChance: 60, dropTiers: [1, 2], dropText: 'Başlangıç ekipmanları' },
+  { id: 'orta', label: 'Orta', name: 'Karanlık Mağara', minLevel: 3, hp: 100, attack: 8, maxTurns: 20, gold: 600, xp: 250, fragments: 1, dropChance: 25, dropTiers: [4], dropText: 'Zindan hükümdarı ekipmanları' },
+  { id: 'zor', label: 'Zor', name: 'Saf Işığın Kalesi', minLevel: 10, hp: 180, attack: 14, maxTurns: 24, gold: 1_400, xp: 1_000, fragments: 3, dropChance: 40, dropTiers: [6], dropText: 'Saf Işığın Muhafızı ekipmanları' },
+]);
 export const RECIPES = Object.freeze([
   { id: 'ejder-kilic', name: 'Ejderha kılıcı', materials: { iron: 30, crystal: 8, fragment: 3 }, gold: 1000 },
   { id: 'ejder-zirh', name: 'Ejderha zırhı', materials: { iron: 25, wood: 15, fragment: 3 }, gold: 900 },
@@ -86,8 +91,12 @@ export const RECIPES = Object.freeze([
 ]);
 export const MATERIAL_NAMES = { iron: 'Demir', wood: 'Odun', crystal: 'Kristal', fragment: 'Boss parçası' };
 export const QUESTS = Object.freeze([
-  { id: 'goblin', name: '3 Goblin yen', field: 'goblins', target: 3, gold: 150, xp: 120 },
-  { id: 'altin', name: 'Çalışma, maden veya savaşlarla 500 altın kazan', field: 'earned', target: 500, gold: 200, xp: 150 },
+  { id: 'goblin', difficulty: 'Kolay', name: '3 Goblin yen', field: 'goblins', target: 3, gold: 150, xp: 120 },
+  { id: 'altin', difficulty: 'Kolay', name: '500 altın kazan', field: 'earned', target: 500, gold: 200, xp: 150 },
+  { id: 'aktivite', difficulty: 'Orta', name: '3 vardiya veya maden tamamla', field: 'activities', target: 3, gold: 350, xp: 260 },
+  { id: 'savasci', difficulty: 'Orta', name: '5 normal savaş kazan', field: 'battles', target: 5, gold: 420, xp: 340 },
+  { id: 'usta', difficulty: 'Zor', name: '2.000 altın kazan', field: 'earned', target: 2_000, gold: 700, xp: 550 },
+  { id: 'zindan', difficulty: 'Zor', name: '1 zindan bossu yen', field: 'dungeons', target: 1, gold: 900, xp: 700 },
 ]);
 export const LIMIT = 1_000_000_000;
 export const DAY = 86_400_000;
@@ -117,7 +126,11 @@ export function normalize(saved, name, time) {
   const ticks = Math.max(0, Math.floor((time - p.regenAt) / 1800_000));
   p.hp = Math.min(100, p.hp + ticks * 10);
   if (ticks) p.regenAt += ticks * 1800_000;
-  if (p.quest?.date !== dateKey(time)) p.quest = { date: dateKey(time), earned: 0, goblins: 0, claimed: [] };
+  if (p.quest?.date !== dateKey(time)) p.quest = { date: dateKey(time), earned: 0, goblins: 0, activities: 0, battles: 0, dungeons: 0, claimed: [] };
+  else {
+    p.quest = { earned: 0, goblins: 0, activities: 0, battles: 0, dungeons: 0, claimed: [], ...p.quest };
+    p.quest.claimed = Array.isArray(p.quest.claimed) ? p.quest.claimed : [];
+  }
   if (p.fight?.expiresAt <= time) p.fight = null;
   normalizeGarage(p, time);
   return p;
@@ -196,15 +209,19 @@ export function advancedAction(p, action, choice, { time, roll, guildId, interac
     return `🎲 Zar: **${die}**. ${die >= 5 ? `Kazandın! Net +${choice} altın.` : `${choice} altın kaybettin.`} Bakiye: **${p.coins}**.\n5–6 kazanır (olasılık 1/3); 1–4 kaybeder. Yalnızca sanal altın; gerçek para değeri yoktur.`;
   }
   if (action === 'dungeon') {
-    requireRpg(level(p.xp) >= 3, 'Zindan için Seviye 3 gerekli.');
+    const dungeon = DUNGEONS.find(item => item.id === (choice || 'orta')); requireRpg(dungeon, 'Geçerli bir zindan zorluğu seç.');
+    requireRpg(level(p.xp) >= dungeon.minLevel, `${dungeon.label} zindan için Seviye ${dungeon.minLevel} gerekli.`);
     requireRpg(!p.fight, 'Zaten bir zindandasın. /zindan ile devam et.');
+    requireRpg(!(p.cooldowns.dungeon > time), `Zindan için ${Math.max(1, Math.ceil((p.cooldowns.dungeon - time) / 60000))} dakika daha beklemelisin.`);
     requireRpg(p.hp >= 20, 'Zindana girmek için en az 20 can gerekli. /iksir kullan veya dinlen.');
-    p.fight = { id: interactionId, hp: 100, turn: 0, expiresAt: time + 15 * 60_000 };
-    return 'Zindan hükümdarı karşında! Boss: **100 can**. Saldır, iksir iç veya kaç. Savaş 15 dakika / en fazla 20 tur sürer.';
+    p.cooldowns.dungeon = time + 60 * 60_000;
+    p.fight = { id: interactionId, difficulty: dungeon.id, bossName: dungeon.name, hp: dungeon.hp, maxHp: dungeon.hp, attack: dungeon.attack, maxTurns: dungeon.maxTurns, reward: dungeon.gold, xpReward: dungeon.xp, fragments: dungeon.fragments, dropChance: dungeon.dropChance, dropTiers: dungeon.dropTiers, turn: 0, expiresAt: time + 15 * 60_000 };
+    return `${dungeon.label} zindan başladı: **${dungeon.name}**. Boss: **${dungeon.hp} can**. Saldır, iksir iç veya kaç. Savaş 15 dakika / en fazla ${dungeon.maxTurns} tur sürer.`;
   }
   if (action === 'dungeonTurn') {
     const f = p.fight;
     requireRpg(f && f.id === choice.id && f.turn === choice.turn, 'Bu savaş düğmesi eskimiş. /zindan ile güncel savaşı aç.');
+    const dungeon = DUNGEONS.find(item => item.id === (f.difficulty || 'orta')) || DUNGEONS[1];
     if (choice.move === 'flee') { p.fight = null; return 'Zindandan kaçtın. Ekipmanın ve altının sende kaldı; giriş bekleme süresi devam ediyor.'; }
     requireRpg(['attack','heal'].includes(choice.move), 'Geçersiz savaş hamlesi.');
     let damage = 0;
@@ -212,19 +229,21 @@ export function advancedAction(p, action, choice, { time, roll, guildId, interac
     else { damage = roll(1, 21) + power(p); if (itemById(p.sword)?.cursed && roll(1, 101) <= 25) damage = Math.max(1, damage - 10); f.hp = Math.max(0, f.hp - damage); }
     f.turn++;
     if (!f.hp) {
-      credit(p, 600, 250); p.wins++; p.bossKills=(p.bossKills||0)+1; p.materials.fragment = (p.materials.fragment || 0) + 1;
-      const drop = roll(1, 101) <= 25 + (p.luckUntil > time ? 20 : 0);
-      let loot = '1 boss parçası';
-      const dungeonItems = ITEMS.filter(item => item.source === 'dungeon' && !p.inventory.includes(item.id));
+      const gold = f.reward ?? dungeon.gold, xp = f.xpReward ?? dungeon.xp, fragments = f.fragments ?? dungeon.fragments;
+      credit(p, gold, xp); p.wins++; p.bossKills=(p.bossKills||0)+1; p.quest.dungeons++; p.materials.fragment = (p.materials.fragment || 0) + fragments;
+      const drop = roll(1, 101) <= (f.dropChance ?? dungeon.dropChance) + (p.luckUntil > time ? 20 : 0);
+      let loot = `${fragments} boss parçası`;
+      const dropTiers = Array.isArray(f.dropTiers) ? f.dropTiers : dungeon.dropTiers;
+      const dungeonItems = ITEMS.filter(item => dropTiers.includes(item.tier) && item.slot !== 'potion' && item.slot !== 'pickaxe' && item.slot !== 'axe' && (dungeon.id === 'kolay' ? !item.source : item.source === 'dungeon') && !p.inventory.includes(item.id));
       const dungeonItem = dungeonItems[roll(0, Math.max(1, dungeonItems.length))];
       if (drop && dungeonItem) { giveItem(p, dungeonItem.id); loot += ` ve ${dungeonItem.name}`; }
       else if (drop) { p.materials.fragment++; loot += ' ve 1 ek boss parçası (tüm nadir ekipmanlar sende)'; }
-      p.fight = null; p.achievement = { id: interactionId, text: `Zindan hükümdarını yendi! +600 altın, +250 XP; ${loot}.` };
-      return `🏆 Boss yenildi! **+600 altın · +250 XP**. Ganimet: **${loot}**.`;
+      p.fight = null; p.achievement = { id: interactionId, text: `${dungeon.name} bossunu yendi! +${gold} altın, +${xp} XP; ${loot}.` };
+      return `🏆 ${dungeon.label} boss yenildi! **+${gold} altın · +${xp} XP**. Ganimet: **${loot}**.`;
     }
-    const hit = Math.max(2, roll(1, 21) + 8 - defense(p));
+    const hit = Math.max(2, roll(1, 21) + (f.attack ?? dungeon.attack) - defense(p));
     p.hp = Math.max(0, p.hp - hit);
-    if (!p.hp || f.turn >= 20) { p.losses++; p.fight = null; return 'Zindan sona erdi. Canın tükendi veya 20 tur doldu. Eşyan kaybolmaz; canın her 30 dakikada 10 yenilenir.'; }
+    if (!p.hp || f.turn >= (f.maxTurns ?? dungeon.maxTurns)) { p.losses++; p.fight = null; return `${dungeon.label} zindan sona erdi. Canın tükendi veya tur sınırı doldu. Eşyan kaybolmaz; canın her 30 dakikada 10 yenilenir.`; }
     return `Tur ${f.turn}: ${choice.move === 'heal' ? 'İksir içtin' : `${damage} hasar verdin`}; boss ${hit} hasar verdi.\nSen: **${p.hp}/100** · Boss: **${f.hp}/100**`;
   }
   throw new RpgError('Geçersiz RPG işlemi.');

@@ -47,3 +47,17 @@ test('boss outcome stays visible inside the RPG screen after the fight ends', t 
   assert.match(html, /Boss yenildi!/u);
   assert.match(html, /data-rpg-dismiss-result/u);
 });
+
+test('quests show difficulty groups, daily timer and three dungeon levels', t => {
+  const store = createStore(':memory:');
+  t.after(() => store.close());
+  const state = createRpg(store).webState(GUILD, user);
+  const quests = renderRpgContent(state, helpers, 'quests');
+  assert.match(quests, /Kolay GÖREV/u);
+  assert.match(quests, /Orta GÖREV/u);
+  assert.match(quests, /Zor GÖREV/u);
+  assert.match(quests, /data-rpg-daily-countdown/u);
+  const dungeon = renderRpgContent(state, helpers, 'dungeon');
+  for (const difficulty of ['kolay', 'orta', 'zor']) assert.match(dungeon, new RegExp(`data-difficulty="${difficulty}"`));
+  assert.match(dungeon, /Saf Işığın Muhafızı ekipmanları/u);
+});

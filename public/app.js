@@ -283,11 +283,12 @@ async function rpgRequest(path, body = {}) {
 }
 function updateRpgTimers() {
   if (state.view !== 'rpg') return;
-  let expiredActivity = false;
+  let expiredActivity = false, expiredDaily = false;
   for (const node of $$('[data-rpg-countdown]')) {
     const serverNow = Date.now() + state.rpgClockOffset;
     const endsAt = Number(node.dataset.endsAt);
     if (!Number.isFinite(endsAt) || endsAt <= 0) { node.textContent = '—'; continue; }
+    if (node.hasAttribute('data-rpg-daily-countdown') && state.rpgData?.player?.daily?.available) { node.textContent = 'Şimdi alınabilir'; continue; }
     const left = endsAt - serverNow, seconds = Math.max(0, Math.ceil(left / 1000));
     const activityEndsAt = Number(state.rpgData?.activity?.endsAt);
     if (left <= 0 && state.rpgData?.activity?.status === 'ready' && endsAt === activityEndsAt) {
@@ -297,9 +298,13 @@ function updateRpgTimers() {
     const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60), rest = seconds % 60;
     node.textContent = hours ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
     if (left <= 0 && state.rpgData?.activity?.status === 'active' && Number(state.rpgData.activity.endsAt) <= serverNow) expiredActivity = true;
+    if (left <= 0 && node.hasAttribute('data-rpg-daily-countdown') && !state.rpgData?.player?.daily?.available) expiredDaily = true;
   }
   if (expiredActivity) {
     state.rpgData.activity.status = 'ready';
+    renderRpgState();
+  } else if (expiredDaily) {
+    state.rpgData.player.daily.available = true;
     renderRpgState();
   }
 }
@@ -540,7 +545,7 @@ document.addEventListener('click', async event => {
       if (action === 'claim-quest') await rpgRequest('quest/claim', { questId: button.dataset.questId });
       if (action === 'daily') await rpgRequest('daily/claim');
       if (action === 'select-class') { if (!confirm('Sınıf seçimi kalıcıdır. Bu sınıfı seçmek istiyor musunuz?')) return; await rpgRequest('class/select', { classId: button.dataset.classId }); }
-      if (action === 'dungeon-start') await rpgRequest('dungeon/start');
+      if (action === 'dungeon-start') await rpgRequest('dungeon/start', { difficulty: button.dataset.difficulty || 'orta' });
       if (action === 'dungeon-move') await rpgRequest('dungeon/action', { move: button.dataset.move });
       if (action === 'craft') await rpgRequest('craft/create', { recipeId: button.dataset.recipeId });
       if (action === 'garage-buy') await rpgRequest('garage/action', { action: 'garageBuy', upgradeId: button.dataset.upgradeId });

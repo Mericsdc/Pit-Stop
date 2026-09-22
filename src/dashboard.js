@@ -375,7 +375,10 @@ export function createDashboard({ client, store, music, features, crew, boostedE
           else if (area === 'quest' && operation === 'claim') message = rpg.act(guildId, user, 'quest', body.questId, requestId);
           else if (area === 'class' && operation === 'select') message = rpg.act(guildId, user, 'class', body.classId, requestId);
           else if (area === 'battle' && operation === 'action') message = rpg.act(guildId, user, 'battle', { monster: body.monsterId, ...(body.skill ? { skill: body.skill } : {}) }, requestId);
-          else if (area === 'dungeon' && operation === 'start') message = rpg.act(guildId, user, 'dungeon', null, requestId);
+          else if (area === 'dungeon' && operation === 'start') {
+            if (body.difficulty != null && !['kolay', 'orta', 'zor'].includes(body.difficulty)) throw new TypeError('Geçersiz zindan zorluğu.');
+            message = rpg.act(guildId, user, 'dungeon', body.difficulty || 'orta', requestId);
+          }
           else if (area === 'dungeon' && operation === 'action') {
             const fight = rpg.profile(guildId, user).fight;
             if (!fight) throw new RpgError('Devam eden bir zindan savaşın yok.');

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createStore } from '../src/store.js';
 import { createRpg } from '../src/rpg.js';
-import { DAY, LIMIT, world, dateKey, CLASSES, ITEMS, RECIPES } from '../src/rpg-system.js';
+import { DAY, LIMIT, world, dateKey, CLASSES, DUNGEONS, ITEMS, QUESTS, RECIPES, itemById } from '../src/rpg-system.js';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -81,6 +81,15 @@ test('crafting spends materials and gold atomically; duplicate and missing ingre
 test('quests award once and reset at Istanbul midnight; reward money does not count itself',t=>{
   const {rpg,seed,setTime,advance}=setup(t);setTime(Date.UTC(2026,8,15,20,59,59));seed(a,{quest:{date:'2026-09-15',earned:500,goblins:3,claimed:[]}});rpg.act(G,a,'quest','altin');assert.equal(rpg.profile(G,a).coins,200);assert.equal(rpg.profile(G,a).quest.earned,500);assert.throws(()=>rpg.act(G,a,'quest','altin'),/bugün aldın/);rpg.act(G,a,'quest','goblin');advance(1000);assert.equal(rpg.profile(G,a).quest.date,'2026-09-16');assert.equal(rpg.profile(G,a).quest.earned,0);assert.throws(()=>rpg.act(G,a,'quest','goblin'),/tamamlanmadı/);
 });
+test('daily quests are grouped as easy, medium and hard with shared progress counters',t=>{
+  const {rpg,seed,advance}=setup(t);
+  assert.deepEqual(new Set(QUESTS.map(q=>q.difficulty)),new Set(['Kolay','Orta','Zor']));
+  seed(a,{sword:'demir-kilic',armor:'deri-zirh',inventory:['demir-kilic','deri-zirh']});
+  rpg.act(G,a,'battle','goblin','quest-battle');
+  assert.equal(rpg.profile(G,a).quest.battles,1);
+  rpg.startActivity(G,a,'mine','quest-mine');advance(15*60_000);rpg.claimActivity(G,a,'quest-mine-claim');
+  assert.equal(rpg.profile(G,a).quest.activities,1);
+});
 test('world stays deterministic, nights affect gathering and blackmarket gates special items',t=>{
   const {rpg,seed,setTime,getTime}=setup(t);const w=world(getTime(),G);assert.deepEqual(world(getTime(),G),w);assert.equal(w.openHours.length,2);assert.equal(new Set(w.openHours).size,2);
   seed(a,{coins:10000});const closed=Array.from({length:24},(_,n)=>n).find(n=>!w.openHours.includes(n));setTime(Date.UTC(2026,8,15,closed-3));assert.throws(()=>rpg.act(G,a,'buy','lanetli-kilic'),/kapalı/);
@@ -95,6 +104,21 @@ test('dungeon turns are versioned, rewards settle once and fleeing preserves coo
   rpg.act(G,a,'dungeonTurn',{id:'boss',turn:0,move:'attack'},'turn0');const after=rpg.profile(G,a);assert.throws(()=>rpg.act(G,a,'dungeonTurn',{id:'boss',turn:0,move:'attack'},'duplicate'),/eskimiş/);assert.equal(rpg.profile(G,a).fight.hp,after.fight.hp);
   for(let turn=1;rpg.profile(G,a).fight;turn++)rpg.act(G,a,'dungeonTurn',{id:'boss',turn,move:'attack'},`turn${turn}`);
   assert.equal(rpg.profile(G,a).coins,600);assert.equal(rpg.profile(G,a).materials.fragment,1);assert.ok(rpg.profile(G,a).inventory.includes('boss-kilic'));assert.throws(()=>rpg.act(G,a,'dungeonTurn',{id:'boss',turn:4,move:'attack'}),/eskimiş/);assert.throws(()=>rpg.act(G,a,'dungeon'),/beklemelisin/);
+});
+test('dungeon difficulties gate levels and use difficulty-specific reward pools',t=>{
+  const {rpg,seed}=setup(t);
+  assert.deepEqual(DUNGEONS.map(d=>d.id),['kolay','orta','zor']);
+  assert.deepEqual(DUNGEONS.find(d=>d.id==='kolay').dropTiers,[1,2]);
+  assert.deepEqual(DUNGEONS.find(d=>d.id==='orta').dropTiers,[4]);
+  assert.deepEqual(DUNGEONS.find(d=>d.id==='zor').dropTiers,[6]);
+  assert.throws(()=>rpg.act(G,a,'dungeon','zor','hard-low'),/Seviye 10/);
+  const gear=['ejder-kilic','ejder-zirh','ejder-kask','ejder-eldiven','ejder-ayakkabi','ejder-pantolon','ejder-pelerin'];
+  seed(a,{xp:8100,inventory:gear,sword:gear[0],armor:gear[1],helmet:gear[2],gloves:gear[3],boots:gear[4],pants:gear[5],cloak:gear[6]});
+  rpg.act(G,a,'dungeon','zor','hard-start');
+  assert.equal(rpg.profile(G,a).fight.maxHp,180);
+  for(let turn=0;rpg.profile(G,a).fight;turn++)rpg.act(G,a,'dungeonTurn',{id:'hard-start',turn,move:'attack'},`hard-turn-${turn}`);
+  const player=rpg.profile(G,a),drop=player.inventory.map(itemById).find(item=>item?.tier===6);
+  assert.ok(drop);assert.equal(player.coins,1400);assert.equal(player.quest.dungeons,1);
 });
 test('dungeon rejects outsider buttons, expired battles, healing without potions and transfers midfight',async t=>{
   const {rpg,seed,advance}=setup(t);seed(a,{xp:400,coins:100});rpg.act(G,a,'dungeon',null,'boss');assert.throws(()=>rpg.act(G,a,'dungeonTurn',{id:'boss',turn:0,move:'heal'}),/envanterinde yok/);assert.equal(rpg.profile(G,a).fight.turn,0);
