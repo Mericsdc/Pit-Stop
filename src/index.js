@@ -49,6 +49,7 @@ const removeReactionRoles = installReactionRoles(client, store, { logger: log })
 const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, rpg, config, logger: log });
 let stopping = false;
 let disconnectedAt;
+let hasBeenReady = false;
 
 async function shutdown(code, reason) {
   if (stopping) return;
@@ -80,6 +81,7 @@ const watchdog = setInterval(() => {
   if (client.isReady()) {
     disconnectedAt = undefined;
   } else {
+    if (!hasBeenReady) return;
     disconnectedAt ??= Date.now();
     if (Date.now() - disconnectedAt >= 300_000) void shutdown(1, 'connection_timeout');
   }
@@ -97,6 +99,7 @@ const roadsideTimer = setInterval(tickGarage, 60_000);
 roadsideTimer.unref();
 
 client.once(Events.ClientReady, readyClient => {
+  hasBeenReady = true;
   log('info', 'ready', { bot: readyClient.user.tag, guilds: readyClient.guilds.cache.size });
   void music.initialize().catch(error => log('error', 'music_initialize_failed', safeError(error)));
   void features.initialize().catch(error => log('error', 'features_initialize_failed', safeError(error)));
@@ -132,6 +135,34 @@ process.on('uncaughtException', error => {
   void shutdown(1, 'uncaught_exception');
 });
 
+async function connectDiscord() {
+  const rest = new REST({ version: '10', timeout: 15_000, retries: 2 }).setToken(config.token);
+  while (!stopping) {
+    try {
+      const application = await rest.get('/oauth2/applications/@me');
+      if (application.id !== config.clientId) {
+        log('error', 'application_id_mismatch');
+        await shutdown(1, 'application_id_mismatch');
+        return;
+      }
+      await client.login(config.token);
+      if (stopping) return;
+      try {
+        const count = await registerCommands(rest, config, allCommands);
+        log('info', 'commands_registered', { count, scope: config.guildId ? 'guild' : 'global' });
+      } catch (error) {
+        log('error', 'command_registration_failed', safeError(error));
+      }
+      return;
+    } catch (error) {
+      if (stopping) return;
+      log('error', 'discord_connect_failed', safeError(error));
+      await client.destroy().catch(() => {});
+      await new Promise(resolve => { const timer = setTimeout(resolve, 30_000); timer.unref(); });
+    }
+  }
+}
+
 try {
   await new Promise((resolve, reject) => {
     health.once('error', reject);
@@ -142,16 +173,7 @@ try {
     dashboard.listen(config.dashboardPort, config.dashboardHost, resolve);
   });
   log('info', 'dashboard_listening', { url: config.publicUrl });
-  const rest = new REST({ version: '10', timeout: 15_000, retries: 2 }).setToken(config.token);
-  const application = await rest.get('/oauth2/applications/@me');
-  if (application.id !== config.clientId) {
-    log('error', 'application_id_mismatch');
-    await shutdown(1, 'application_id_mismatch');
-  } else if (!stopping) {
-    await client.login(config.token);
-    const count = await registerCommands(rest, config, allCommands);
-    log('info', 'commands_registered', { count, scope: config.guildId ? 'guild' : 'global' });
-  }
+  void connectDiscord();
 } catch (error) {
   log('error', 'startup_failed', safeError(error));
   await shutdown(1, 'startup_failed');

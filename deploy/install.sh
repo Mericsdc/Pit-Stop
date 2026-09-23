@@ -145,8 +145,8 @@ systemctl start pit-stop.service
 healthy=0
 for attempt in {1..30}; do
   if systemctl is-active --quiet pit-stop.service && PATH="$runtime_path" node -e \
-    'fetch("http://127.0.0.1:" + process.argv[1] + "/healthz", {signal: AbortSignal.timeout(1500)}).then(async r => {const body = await r.json(); process.exit(r.ok && body.name === "Pit-Stop" && body.status === "ready" ? 0 : 1);}).catch(() => process.exit(1))' \
-    "$health_port"; then
+    'fetch("http://127.0.0.1:" + process.argv[1] + "/healthz", {signal: AbortSignal.timeout(1500)}).then(async r => {const body = await r.json(); const ready = r.ok && body.name === "Pit-Stop" && body.status === "ready"; const connecting = process.argv[2] === "1" && body.name === "Pit-Stop" && body.status === "connecting"; process.exit(ready || connecting ? 0 : 1);}).catch(() => process.exit(1))' \
+    "$health_port" "${PIT_STOP_ALLOW_CONNECTING:-0}"; then
     healthy=1
     break
   fi
@@ -155,5 +155,5 @@ done
 [[ $healthy -eq 1 ]]
 systemctl enable pit-stop.service
 trap - ERR
-printf 'Pit-Stop is ready. Release: %s\n' "$release_dir"
+printf 'Pit-Stop service is running. Release: %s\n' "$release_dir"
 printf 'Logs: sudo journalctl -u pit-stop.service -f\n'
