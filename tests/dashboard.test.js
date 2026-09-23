@@ -177,7 +177,7 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
   assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
   assert.equal(data.items.length, 56);
   assert.equal(data.monsters.length, 6);
-  assert.equal(data.commands.length, 42);
+  assert.equal(data.commands.length, 48);
   assert.equal(data.classes.length, 3);
   assert.equal(data.recipes.length, 9);
   assert.equal(data.world.timezone, 'Europe/Istanbul');
@@ -191,7 +191,7 @@ test('RPG dashboard requires guild access and returns scoped ranking, catalog an
     body: JSON.stringify({ requestId: 'garage_buy_test', action: 'garageBuy', upgradeId: 'krom-set' }),
   });
   assert.equal(garageResponse.status, 200);
-  assert.ok((await garageResponse.json()).state.garage.owned.includes('krom-set'));
+  assert.ok((await garageResponse.json()).state.garage.upgrades.find(item => item.id === 'krom-set').readyAt);
   assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/rpg`, { headers })).status, 403);
 });
 
@@ -204,6 +204,7 @@ test('RPG announcement channel changes use protected settings and validate guild
   assert.equal(fixture.store.getSettings(GUILD).rpgAnnouncementChannelId, CHANNEL);
   assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: null }, { 'X-CSRF-Token': 'wrong' })).status, 403);
   assert.equal((await fixture.request('/rpg-view.js')).status, 200);
+  assert.equal((await fixture.request('/rpg-garage-scene.js')).status, 200);
 });
 
 test('OAuth HTTP flow issues protected state/session cookies and attempts silent reuse first', async (t) => {

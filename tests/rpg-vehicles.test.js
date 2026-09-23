@@ -60,14 +60,15 @@ test('car repair and auction share PitCoin, refund outbid player and settle exac
   advance(30 * 60_000);
   const settled = rpg.webState(GUILD, seller);
   assert.equal(settled.auctions[0].status, 'sold');
-  assert.equal(rpg.profile(GUILD, seller).coins, sellerBefore + secondAmount);
-  assert.equal(rpg.webState(GUILD, secondBidder).vehicles.vehicles[0].id, car.id);
+  assert.equal(rpg.profile(GUILD, seller).coins, sellerBefore + settled.auctions[0].currentBid);
+  if (settled.auctions[0].winnerId === secondBidder.id) assert.equal(rpg.webState(GUILD, secondBidder).vehicles.vehicles[0].id, car.id);
+  else assert.equal(rpg.profile(GUILD, secondBidder).coins, 20_000);
   rpg.webState(GUILD, seller);
-  assert.equal(rpg.profile(GUILD, seller).coins, sellerBefore + secondAmount);
+  assert.equal(rpg.profile(GUILD, seller).coins, sellerBefore + settled.auctions[0].currentBid);
   assert.equal(store.listRecords(GUILD, 'rpg_transaction').filter(entry => entry.type === 'vehicleAuctionSold').length, 1);
 });
 
-test('unbid auction completes with server opening offer and keeps vehicles guild scoped', t => {
+test('NPC bidders advance a timed auction and keep vehicles guild scoped', t => {
   const { rpg, advance } = fixture(t);
   rpg.act(GUILD, seller, 'carBuy', 'compact', 'npc_buy');
   const car = rpg.webState(GUILD, seller).vehicles.vehicles[0];
@@ -79,5 +80,48 @@ test('unbid auction completes with server opening offer and keeps vehicles guild
   assert.equal(rpg.auctions('1400000000000000999').length, 0);
   advance(30 * 60_000);
   assert.equal(rpg.auctions(GUILD)[0].status, 'sold');
-  assert.equal(rpg.profile(GUILD, seller).coins, before + auction.openingBid);
+  const settled = rpg.auctions(GUILD)[0];
+  assert.ok(settled.currentBid >= auction.openingBid);
+  assert.ok(settled.currentBid <= Math.floor(auction.openingBid * 2.1));
+  assert.equal(rpg.profile(GUILD, seller).coins, before + settled.currentBid);
+});
+
+test('loot boxes, junkyard salvage and car mods share the server-side depot', t => {
+  const { rpg, store } = fixture(t);
+  const saved = rpg.profile(GUILD, seller);
+  saved.garage.xp = 3_800;
+  store.putRecord(GUILD, 'rpg_player', seller.id, saved);
+  rpg.act(GUILD, seller, 'carBuy', 'compact', 'custom_car');
+  const car = rpg.webState(GUILD, seller).vehicles.vehicles[0];
+  for (const id of ['filter', 'brake', 'alloy-wheel']) rpg.act(GUILD, seller, 'partBuy', id, `custom_${id}`);
+  rpg.act(GUILD, seller, 'carRepair', car.id, 'custom_repair');
+  const original = rpg.webState(GUILD, seller).vehicles.vehicles[0];
+  assert.match(rpg.act(GUILD, seller, 'modApply', { carId: car.id, modId: 'wheels' }, 'custom_mod'), /kuruldu/u);
+  const modified = rpg.webState(GUILD, seller).vehicles.vehicles[0];
+  assert.ok(modified.raceScore > original.raceScore);
+  assert.ok(modified.openingBid > original.openingBid);
+  assert.throws(() => rpg.act(GUILD, seller, 'modApply', { carId: car.id, modId: 'wheels' }, 'custom_mod_again'), /depoda yok|zaten takılı/u);
+  assert.match(rpg.act(GUILD, seller, 'boxBuy', 'legendary', 'legendary_box'), /çıktı/u);
+  assert.match(rpg.act(GUILD, seller, 'junkyardSearch', null, 'junkyard_find'), /buldun/u);
+  const junk = rpg.webState(GUILD, seller).vehicles.vehicles.find(item => item.source === 'junkyard');
+  assert.ok(junk);
+  assert.match(rpg.act(GUILD, seller, 'carSalvage', junk.id, 'junkyard_salvage'), /parçalarına ayrıldı/u);
+  assert.equal(rpg.webState(GUILD, seller).vehicles.vehicles.some(item => item.id === junk.id), false);
+});
+
+test('an open SOS can be claimed by only one equipped player', t => {
+  const { rpg, store } = fixture(t);
+  const first = rpg.profile(GUILD, firstBidder), second = rpg.profile(GUILD, secondBidder);
+  for (const player of [first, second]) {
+    player.garage.xp = 1_400;
+    player.garage.owned.push('ikinci-el-cekici');
+    player.garage.equipped.tow = 'ikinci-el-cekici';
+  }
+  store.putRecord(GUILD, 'rpg_player', firstBidder.id, first);
+  store.putRecord(GUILD, 'rpg_player', secondBidder.id, second);
+  const time = Date.parse('2026-09-23T08:00:00+03:00');
+  store.putRecord(GUILD, 'rpg_roadside_call', 'current', { callId: 'sos-1', status: 'open', openUntil: time + 60_000, nextAt: time + 3_600_000 });
+  assert.match(rpg.act(GUILD, firstBidder, 'roadside', null, 'sos_first'), /ilk sen aldın/u);
+  assert.throws(() => rpg.act(GUILD, secondBidder, 'roadside', null, 'sos_second'), /başka bir oyuncu/u);
+  assert.equal(store.getRecord(GUILD, 'rpg_roadside_call', 'current').claimedBy, firstBidder.id);
 });

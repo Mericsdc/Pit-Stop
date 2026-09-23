@@ -538,6 +538,8 @@ document.addEventListener('click', async event => {
       }
       if (action === 'car-buy' && !confirm('Bu bozuk aracı satın alıp garajına almak istiyor musun?')) return;
       if (action === 'car-list' && !confirm('Tamirli aracın 30 dakikalık açık artırmaya çıkarılacak. Onaylıyor musun?')) return;
+      if (action === 'car-salvage' && !confirm('Bu araç kalıcı olarak parçalarına ayrılacak. Onaylıyor musun?')) return;
+      if (action === 'mod-apply' && !confirm('Modifiye başarısız olursa parça ve işçilik gideri kaybedilir. Devam edilsin mi?')) return;
       if (action === 'auction-bid') {
         const minimum = Number(button.dataset.currentBid) + 50;
         const input = prompt(`Teklifin kaç PitCoin olsun? En az ${number(minimum)} PitCoin.`, String(minimum));
@@ -548,9 +550,17 @@ document.addEventListener('click', async event => {
       }
       button.disabled = true;
       if (action === 'part-buy') await rpgRequest('vehicles/action', { action: 'partBuy', choiceId: button.dataset.choiceId });
+      if (action === 'box-buy') await rpgRequest('vehicles/action', { action: 'boxBuy', choiceId: button.dataset.choiceId });
+      if (action === 'junkyard-search') await rpgRequest('vehicles/action', { action: 'junkyardSearch' });
       if (action === 'job-repair') await rpgRequest('vehicles/action', { action: 'jobRepair', choiceId: button.dataset.choiceId });
       if (action === 'car-buy') await rpgRequest('vehicles/action', { action: 'carBuy', choiceId: button.dataset.choiceId });
       if (action === 'car-repair') await rpgRequest('vehicles/action', { action: 'carRepair', choiceId: button.dataset.carId });
+      if (action === 'car-salvage') await rpgRequest('vehicles/action', { action: 'carSalvage', choiceId: button.dataset.carId });
+      if (action === 'mod-apply') {
+        const modId = button.closest('.rpg-vehicle-card')?.querySelector('[data-rpg-mod-select]')?.value;
+        if (!modId) { notice('Bu araç için uygulanabilir modifiye bulunmuyor.'); return; }
+        await rpgRequest('vehicles/action', { action: 'modApply', carId: button.dataset.carId, modId });
+      }
       if (action === 'car-list') await rpgRequest('vehicles/list', { carId: button.dataset.carId });
       if (action === 'start-activity') await rpgRequest('activity/start', { type: button.dataset.activityType });
       if (action === 'claim-activity') await rpgRequest('activity/claim');
@@ -564,6 +574,8 @@ document.addEventListener('click', async event => {
       if (action === 'dungeon-move') await rpgRequest('dungeon/action', { move: button.dataset.move });
       if (action === 'craft') await rpgRequest('craft/create', { recipeId: button.dataset.recipeId });
       if (action === 'garage-buy') await rpgRequest('garage/action', { action: 'garageBuy', upgradeId: button.dataset.upgradeId });
+      if (action === 'garage-expedite') await rpgRequest('garage/action', { action: 'garageExpedite', upgradeId: button.dataset.upgradeId });
+      if (action === 'garage-repair') await rpgRequest('garage/action', { action: 'repairUpgrade', upgradeId: button.dataset.upgradeId });
       if (action === 'hire-employee') await rpgRequest('garage/action', { action: 'hireEmployee' });
       if (action === 'employee-bonus') await rpgRequest('garage/action', { action: 'employeeBonus' });
       if (action === 'employee-leave') await rpgRequest('garage/action', { action: 'employeeLeave' });

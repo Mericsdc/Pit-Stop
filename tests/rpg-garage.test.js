@@ -19,8 +19,9 @@ test('garage purchases enforce level gates and hydraulic lift unlocks an employe
   assert.throws(() => garageAction(player, 'garageBuy', 'hidrolik-lift', { time: 1_000_000, roll: highRoll }), /Seviye 5/u);
   player.garage.xp = 2_400;
   garageAction(player, 'garageBuy', 'hidrolik-lift', { time: 1_000_000, roll: highRoll });
-  garageAction(player, 'hireEmployee', null, { time: 1_000_000, roll: highRoll });
-  const garage = garageState(player, 1_000_000);
+  assert.throws(() => garageAction(player, 'hireEmployee', null, { time: 1_000_000, roll: highRoll }), /Hidrolik Lift/u);
+  garageAction(player, 'hireEmployee', null, { time: 1_000_000 + 15 * 60_000, roll: highRoll });
+  const garage = garageState(player, 1_000_000 + 15 * 60_000);
   assert.equal(garage.employee.title, 'Çırak');
   assert.equal(garage.employee.morale, 100);
   assert.equal(garage.equipped.employeeTools, 'pasli-yedek');
@@ -56,8 +57,23 @@ test('roadside assistance requires a tow truck and applies a durable cooldown', 
   const player = user(); player.garage.xp = 1_400;
   assert.throws(() => garageAction(player, 'roadside', null, { time: 1_000_000, roll: highRoll }), /çekici/u);
   garageAction(player, 'garageBuy', 'ikinci-el-cekici', { time: 1_000_000, roll: highRoll });
-  const result = garageAction(player, 'roadside', null, { time: 1_000_000, roll: highRoll });
+  const result = garageAction(player, 'roadside', null, { time: 1_000_000 + 15 * 60_000, roll: highRoll });
   assert.match(result, /başarıyla kurtarıldı/u);
-  assert.equal(player.garage.roadsideCooldown, 1_000_000 + 30 * 60_000);
-  assert.throws(() => garageAction(player, 'roadside', null, { time: 1_000_001, roll: highRoll }), /operasyonda/u);
+  assert.equal(player.garage.roadsideCooldown, 1_000_000 + 45 * 60_000);
+  assert.throws(() => garageAction(player, 'roadside', null, { time: 1_000_000 + 15 * 60_000 + 1, roll: highRoll }), /operasyonda/u);
+});
+
+test('delivery can be expedited and worn equipment loses its bonus until repaired', () => {
+  const player = user(); player.garage.xp = 2_400;
+  garageAction(player, 'garageBuy', 'krom-set', { time: 1_000_000, roll: highRoll });
+  assert.equal(garageState(player, 1_000_000).upgrades.find(item => item.id === 'krom-set').owned, false);
+  garageAction(player, 'garageExpedite', 'krom-set', { time: 1_000_000, roll: highRoll });
+  assert.equal(player.garage.equipped.tools, 'krom-set');
+  player.garage.durability['krom-set'] = 1;
+  resolveGarageShift(player, { time: 1_000_000, roll: highRoll, baseGold: 100, baseXp: 35 });
+  assert.equal(player.garage.durability['krom-set'], 0);
+  const withoutBonus = resolveGarageShift(player, { time: 1_000_001, roll: highRoll, baseGold: 100, baseXp: 35 });
+  assert.equal(withoutBonus.gold, 110);
+  garageAction(player, 'repairUpgrade', 'krom-set', { time: 1_000_002, roll: highRoll });
+  assert.equal(player.garage.durability['krom-set'], 100);
 });

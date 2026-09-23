@@ -55,6 +55,7 @@ async function shutdown(code, reason) {
   stopping = true;
   log('info', 'shutdown', { reason });
   clearInterval(watchdog);
+  clearInterval(roadsideTimer);
   const deadline = setTimeout(() => process.exit(code), 5000);
   deadline.unref();
   removeCommunityHandlers();
@@ -84,6 +85,16 @@ const watchdog = setInterval(() => {
   }
 }, 15_000);
 watchdog.unref();
+function tickGarage() {
+  if (!client.isReady()) return;
+  for (const guild of client.guilds.cache.values()) {
+    try { rpg.auctions(guild.id); }
+    catch (error) { log('error', 'rpg_auction_timer_failed', { guildId: guild.id, ...safeError(error) }); }
+  }
+  void rpg.dispatchRoadsideCalls().catch(error => log('error', 'rpg_roadside_timer_failed', safeError(error)));
+}
+const roadsideTimer = setInterval(tickGarage, 60_000);
+roadsideTimer.unref();
 
 client.once(Events.ClientReady, readyClient => {
   log('info', 'ready', { bot: readyClient.user.tag, guilds: readyClient.guilds.cache.size });
@@ -91,6 +102,7 @@ client.once(Events.ClientReady, readyClient => {
   void features.initialize().catch(error => log('error', 'features_initialize_failed', safeError(error)));
   void crew.initialize().catch(error => log('error', 'crew_initialize_failed', safeError(error)));
   void boostedEvents.initialize().catch(error => log('error', 'boosted_event_initialize_failed', safeError(error)));
+  tickGarage();
 });
 client.on(Events.Raw, payload => music.handleRaw(payload));
 client.on(Events.MessageCreate, message => {

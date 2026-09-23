@@ -1,9 +1,9 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { SlashCommandBuilder, MessageFlags, escapeMarkdown, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
 import { ITEMS, MONSTERS, DUNGEONS, CLASSES, RECIPES, QUESTS, MATERIAL_NAMES, LIMIT, DAY, EQUIPMENT_SLOTS, level, itemById, normalize, world, power, credit, giveItem, advancedAction, RpgError, requireRpg } from './rpg-system.js';
 import { createSocial } from './rpg-social.js';
 import { GARAGE_UPGRADES, garageAction, garageState, garageWorkDuration, resolveGarageShift } from './rpg-garage.js';
-import { VEHICLE_MODELS, VEHICLE_PARTS, vehicleAction, vehicleState, normalizeVehicles, auctionOpeningPrice } from './rpg-vehicles.js';
+import { VEHICLE_MODELS, VEHICLE_PARTS, VEHICLE_BOXES, VEHICLE_MODS, vehicleAction, vehicleState, normalizeVehicles, auctionOpeningPrice } from './rpg-vehicles.js';
 export { ITEMS as RPG_ITEMS, MONSTERS as RPG_MONSTERS, level as rpgLevel } from './rpg-system.js';
 const waits = { work: 1800000, mine: 900000, battle: 120000, gamble: 60000 };
 const noMentions = { parse: [] }, title = user => user.globalName || user.username;
@@ -15,7 +15,7 @@ const rarityNames = ['Yaygın', 'Yaygın', 'Sıra dışı', 'Nadir', 'Destansı'
 export const RPG_GUIDE = [
   '⚔️ **Pit-Stop RPG rehberi**',
   '**Kazan:** /vardiya veya /çalış ile süreli garaj mesaisi, /maden ile 15 dakikalık kazı başlat. Süre dolunca Discord düğmesinden ya da web panelinden ödülü topla. /günlük seri ödülü, /görev günlük hedeftir.',
-  '**Garaj:** /garaj seviyeni ve çalışanını gösterir. /garaj-market ile yükseltme al. /araçlarım günlük müşteri tamirlerini, parça deponu ve sahip olduğun araçları gösterir. /parça-al, /müşteri-tamir, /araba-al, /araba-tamir, /araba-sat, /açık-artırma ve /teklif-ver araç ekonomisidir. /işe-al, /ikramiye-ver, /izin-ver, /mesai-topla, /otomatik-mesai ve /tamir-et personel yönetimidir. /yol-yardım çekici yan görevidir.',
+  '**Garaj:** /garaj durumunu, /garaj-market siparişleri gösterir. /kargo-hızlandır ve /ekipman-bakım kurulum/bakımı yönetir. /araçlarım tamir, depo ve araçlarını; /parça-al, /mod-kutusu, /hurdalık, /araba-parçala ve /modifiye parça döngüsünü gösterir. /müşteri-tamir, /araba-al, /araba-tamir, /araba-sat, /açık-artırma, /teklif-ver araç ekonomisidir. /işe-al, /ikramiye-ver, /izin-ver, /mesai-topla, /otomatik-mesai, /tamir-et personeli; /yol-yardım çekiciyi yönetir.',
   '**Ekipman:** /mağaza veya /market menüsünden al; /satın-al ile doğrudan seç. /profil envanterini gösterir. /iksir can veya 30 dakikalık şans etkisi sağlar. Kazma maden, balta çalışma gelirini artırır.',
   '**Sınıflar:** Seviye 10’da /sınıf ile kalıcı seçim yap: Savaşçı /öfke, Büyücü /ateş-topu, Okçu /nişan. Yetenekler 30 dk, normal /savaş 2 dk bekler. d20 + ekipman + seviye + sınıf gücü karşılaştırılır; eşitlikte oyuncu kazanır.',
   '**Zindan:** /zindan ile Kolay, Orta veya Zor seç. Zorluk arttıkça boss gücü, ödül ve eşya kalitesi yükselir. Saldır, İksir İç ve Kaç düğmeleri kullanılır; giriş beklemesi 1 saattir.',
@@ -74,9 +74,9 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       if(win){credit(p,monster.reward,monster.xp);p.wins++;p.quest.battles=(p.quest.battles||0)+1;if(monster.id==='goblin')p.quest.goblins++;}else{p.losses++;p.hp=Math.max(0,p.hp-10);}
       const lost=win?0:Math.min(p.coins,Math.ceil(monster.reward/5));p.coins-=lost;
       result=`⚔️ **${monster.name}**\nSen: d20 **${die}** + güç ${bonus} + yetenek ${skillBonus} − lanet ${curse} = **${total}**\nCanavar: d20 **${enemyDie}** + güç ${monster.defense} = **${enemy}**\n${win?`🏆 Kazandın! +${monster.reward} altın · +${monster.xp} XP`:`Yenildin. ${lost} altın ve 10 can kaybettin; ekipmanın sende kaldı.`}\nBakiye: **${p.coins}** · Seviye **${level(p.xp)}**`;
-    } else if(['partBuy','jobRepair','carBuy','carRepair'].includes(action)) {
-      result=vehicleAction(p,guildId,userId,action,choice,time);
-    } else if(['garageBuy','hireEmployee','employeeBonus','employeeLeave','employeeCollect','autoWork','repairEmployee','roadside'].includes(action)) {
+    } else if(['partBuy','boxBuy','junkyardSearch','jobRepair','carBuy','carRepair','carSalvage','modApply'].includes(action)) {
+      result=vehicleAction(p,guildId,userId,action,choice,{time,roll});
+    } else if(['garageBuy','garageExpedite','repairUpgrade','hireEmployee','employeeBonus','employeeLeave','employeeCollect','autoWork','repairEmployee','roadside'].includes(action)) {
       try { result=garageAction(p,action,choice,{time,roll}); }
       catch(error) { throw new RpgError(error.message); }
     } else result=advancedAction(p,action,choice,{time,roll,guildId,interactionId});
@@ -90,6 +90,10 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
     return {playerId:userId,type:action,amount,balanceBefore:before.coins,balanceAfter:p.coins,xpBefore:before.xp,xpAfter:p.xp,metadata:extra,createdAt:time};
   }
   function act(guildId,user,action,choice,interactionId=randomUUID()) {
+    if(action==='roadside') {
+      const call=store.getRecord(guildId,'rpg_roadside_call','current');
+      if(call?.openUntil>now())return claimRoadside(guildId,user,interactionId,call.callId);
+    }
     let result;
     store.transactRecords(guildId,[{kind:'rpg_player',id:user.id},{kind:'rpg_activity',id:user.id},{kind:'rpg_transaction',id:interactionId}],([saved,currentActivity,receipt])=>{
       const time=now(),p=normalize(saved,title(user),time),before={coins:p.coins,xp:p.xp};
@@ -107,6 +111,40 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       return [p,currentActivity||{playerId:user.id,status:'idle'},transaction(p,user.id,action,before,result,time,interactionId,{choice:typeof choice==='string'?choice:choice?.monster||null})];
     });
     return result;
+  }
+  function claimRoadside(guildId,user,interactionId,callId) {
+    let result;
+    store.transactRecords(guildId,[{kind:'rpg_player',id:user.id},{kind:'rpg_activity',id:user.id},{kind:'rpg_roadside_call',id:'current'},{kind:'rpg_transaction',id:interactionId}],([saved,activity,call,receipt])=>{
+      const time=now(),p=normalize(saved,title(user),time),before={coins:p.coins,xp:p.xp};
+      requireRpg(!receipt&&!p.receipts.includes(interactionId),'Bu işlem zaten tamamlandı.');
+      requireRpg(call?.callId===callId&&call.status==='open'&&call.openUntil>time,'Telsiz çağrısını başka bir oyuncu aldı veya süre doldu.');
+      requireRpg(!activity||!['active','ready'].includes(activity.status),'Önce mevcut etkinliğinin ödülünü topla.');
+      result=perform(p,guildId,'roadside',null,interactionId,time,{userId:user.id});
+      p.receipts=[...p.receipts.slice(-49),interactionId];p.updatedAt=time;
+      call.status='claimed';call.claimedBy=user.id;call.claimedAt=time;
+      return [p,activity||{playerId:user.id,status:'idle'},call,transaction(p,user.id,'roadside',before,result,time,interactionId,{callId})];
+    });
+    return `🚨 Telsiz çağrısını ilk sen aldın!\n${result}`;
+  }
+  const roadsideDispatching=new Set();
+  async function dispatchRoadsideCalls() {
+    if(!client?.isReady?.())return;
+    for(const guild of client.guilds.cache.values()) {
+      const channelId=store.getSettings(guild.id).rpgAnnouncementChannelId;
+      if(!channelId||roadsideDispatching.has(guild.id))continue;
+      const time=now(),current=store.getRecord(guild.id,'rpg_roadside_call','current');
+      if(!current){store.updateRecord(guild.id,'rpg_roadside_call','current',()=>({callId:null,status:'waiting',nextAt:time+roll(10,21)*60_000}));continue;}
+      if(current.nextAt>time)continue;
+      roadsideDispatching.add(guild.id);
+      try {
+        const channel=await client.channels.fetch(channelId);
+        if(!channel||channel.guildId!==guild.id||!channel.isTextBased?.())continue;
+        const openUntil=now()+60_000,callId=randomUUID();
+        await channel.send({content:`🚨 **Telsiz Çağrısı** · E-5 yolunda bir araç arızalandı! Garaj Seviye 4 ve çekicisi olan ilk oyuncu 60 saniye içinde **/yol-yardım** komutuyla işi alır. Bitiş: <t:${Math.floor(openUntil/1000)}:R>`,allowedMentions:noMentions});
+        store.updateRecord(guild.id,'rpg_roadside_call','current',saved=>({callId,status:'open',openUntil,createdAt:now(),nextAt:now()+roll(45,91)*60_000,previousId:saved?.callId||null}));
+      } catch(error) { logger('error','rpg_roadside_dispatch_failed',{guildId:guild.id}); }
+      finally { roadsideDispatching.delete(guild.id); }
+    }
   }
   function startActivity(guildId,user,type,interactionId=randomUUID(),source='web') {
     requireRpg(Object.hasOwn(activityDurations,type),'Geçerli bir etkinlik seç.');
@@ -178,6 +216,7 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
     return result;
   }
   function settleAuction(guildId, auctionId) {
+    advanceAuction(guildId, auctionId);
     const listed=store.getRecord(guildId,'rpg_auction',auctionId),time=now();
     if (!listed || listed.status!=='open' || listed.endsAt>time) return listed;
     const entries=[{kind:'rpg_auction',id:auctionId},{kind:'rpg_player',id:listed.sellerId},
@@ -201,9 +240,38 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
     });
     return store.getRecord(guildId,'rpg_auction',auctionId);
   }
+  const botNumber=(id,step,salt)=>createHash('sha256').update(`${id}:${step}:${salt}`).digest().readUInt32BE(0);
+  function advanceAuction(guildId,auctionId) {
+    for(let attempt=0;attempt<20;attempt++) {
+      const snapshot=store.getRecord(guildId,'rpg_auction',auctionId),time=now();
+      if(!snapshot||snapshot.status!=='open'||!snapshot.nextBotAt||snapshot.nextBotAt>Math.min(time,snapshot.endsAt-1))break;
+      const step=Number(snapshot.botStep||0),at=snapshot.nextBotAt,elapsed=(at-snapshot.createdAt)/(snapshot.endsAt-snapshot.createdAt);
+      const aggressive=botNumber(auctionId,step,'profile')%3===0;
+      const wantsBid=aggressive?elapsed>.55&&botNumber(auctionId,step,'chance')%100<76:elapsed<.55&&botNumber(auctionId,step,'chance')%100<55;
+      const margin=5+botNumber(auctionId,step,'margin')%11;
+      const bid=Math.ceil(snapshot.currentBid*(1+margin/100));
+      const permitted=wantsBid&&bid<=Math.floor(snapshot.openingBid*2.1);
+      const previousId=permitted?snapshot.bidderId:null;
+      const refundId=`${auctionId}:bot-refund:${step}`;
+      const entries=[{kind:'rpg_auction',id:auctionId},...(previousId?[{kind:'rpg_player',id:previousId},{kind:'rpg_transaction',id:refundId}]:[])];
+      store.transactRecords(guildId,entries,values=>{
+        const auction=values[0];
+        requireRpg(auction?.status==='open'&&auction.botStep===snapshot.botStep&&auction.bidderId===snapshot.bidderId,'Teklif değişti; yeniden dene.');
+        auction.botStep=step+1;
+        auction.nextBotAt=at+(1+botNumber(auctionId,step,'wait')%3)*60_000;
+        if(!permitted)return [auction];
+        const oldBid=auction.currentBid;
+        auction.currentBid=bid;auction.bidderId=null;auction.bidderName=aggressive?'Pist Koleksiyoneri':'Fırsat Avcısı';auction.npcWinner=true;
+        if(!previousId)return [auction];
+        const previous=normalize(values[1],snapshot.bidderName,time),before={coins:previous.coins,xp:previous.xp};
+        credit(previous,oldBid,0,false);previous.updatedAt=time;
+        return [auction,previous,transaction(previous,previousId,'vehicleAuctionRefund',before,`Daha yüksek teklif geldi. ${oldBid} PitCoin iade edildi.`,time,refundId,{auctionId})];
+      });
+    }
+  }
   function auctions(guildId) {
     const entries=store.listRecords(guildId,'rpg_auction',100);
-    return entries.map(item=>item.status==='open'&&item.endsAt<=now()?settleAuction(guildId,item.id):item)
+    return entries.map(item=>{if(item.status!=='open')return item;advanceAuction(guildId,item.id);return item.endsAt<=now()?settleAuction(guildId,item.id):store.getRecord(guildId,'rpg_auction',item.id);})
       .filter(Boolean).sort((a,b)=>(a.status==='open'?0:1)-(b.status==='open'?0:1)||b.createdAt-a.createdAt).slice(0,30)
       .map(({car,...item})=>item);
   }
@@ -216,9 +284,10 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       const car=p.garage.vehicles.find(item=>item.id===carId),model=VEHICLE_MODELS.find(item=>item.id===car?.modelId);
       requireRpg(car&&model,'Bu araç garajında bulunamadı.');
       requireRpg(car.status==='repaired','Açık artırmaya yalnızca tamir edilmiş araç çıkarılabilir.');
-      const opening=auctionOpeningPrice(p,model);
+      const opening=auctionOpeningPrice(p,model,car);
+      for(const id of ['yikama-alani','boya-kabini'])if(p.garage.owned.includes(id)&&Number(p.garage.durability?.[id]??100)>0)p.garage.durability[id]=Math.max(0,Number(p.garage.durability[id]??100)-1);
       const listing={sellerId:user.id,sellerName:title(user),car,modelId:model.id,modelName:model.name,modelClass:model.class,
-        openingBid:opening,currentBid:opening,bidderId:null,bidderName:null,createdAt:time,endsAt:time+30*60_000,status:'open'};
+        openingBid:opening,currentBid:opening,bidderId:null,bidderName:null,createdAt:time,endsAt:time+30*60_000,status:'open',botStep:0,nextBotAt:time+(1+botNumber(auctionId,0,'first')%3)*60_000};
       p.garage.vehicles=p.garage.vehicles.filter(item=>item.id!==carId);
       result=`${model.name} açık artırmaya çıkarıldı. Başlangıç teklifi ${opening} PitCoin; 30 dakika sonra satış tamamlanır.`;
       p.receipts=[...p.receipts.slice(-49),interactionId];p.updatedAt=time;
@@ -228,6 +297,7 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
   }
   function bidVehicle(guildId,user,auctionId,amount,interactionId=randomUUID()) {
     requireRpg(Number.isSafeInteger(amount)&&amount>0&&amount<=LIMIT,'Geçerli bir PitCoin teklifi gir.');
+    advanceAuction(guildId,auctionId);
     const snapshot=store.getRecord(guildId,'rpg_auction',auctionId);
     requireRpg(snapshot,'Açık artırma bulunamadı.');
     const previousId=snapshot.bidderId&&snapshot.bidderId!==user.id?snapshot.bidderId:null;
@@ -284,7 +354,7 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       monsters:MONSTERS,dungeons:DUNGEONS,classes:CLASSES,recipes:RECIPES,
       quests:QUESTS.map(q=>({...q,progress:Math.min(q.target,p.quest[q.field]||0),claimed:p.quest.claimed.includes(q.id)})),
       commands:commands.map(({data})=>{const command=data.toJSON();return {name:command.name,description:command.description,usage:`/${command.name}${(command.options||[]).map(option=>` ${option.name}:...`).join('')}`};}),
-      world:{...w,marketTarget},garage:garageState(p,time),vehicles:vehicleState(guildId,user.id,p,time),auctions:currentAuctions,transactions,
+      world:{...w,marketTarget},garage:garageState(p,time),roadsideCall:store.getRecord(guildId,'rpg_roadside_call','current'),vehicles:vehicleState(guildId,user.id,p,time),auctions:currentAuctions,transactions,
       leaderboard:store.rpgLeaderboard(guildId).map((entry,index)=>{const gear=Object.fromEntries(EQUIPMENT_SLOTS.map(slot=>[slot,itemById(entry[slot])?.name||null]));return {rank:index+1,id:entry.id,name:entry.name,level:level(entry.xp),xp:entry.xp,coins:entry.coins,wins:entry.wins||0,losses:entry.losses||0,bossKills:entry.bossKills||0,className:CLASSES.find(c=>c.id===entry.classId)?.name||'Sınıfsız',sword:gear.sword,armor:gear.armor,equipment:gear};}),
     };
   }
@@ -351,12 +421,18 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
     command('üret','Tarifleri gör veya malzemelerle eşya üret.',i=>{const id=i.options.getString('tarif');return id?act(i.guildId,i.user,'craft',id,i.id):`**Üretim tarifleri**\n${RECIPES.map(r=>`**${r.name}**: ${Object.entries(r.materials).map(([id,n])=>`${n} ${MATERIAL_NAMES[id]}`).join(', ')} + ${r.gold} altın`).join('\n')}\n/üret tarif:... ile üret.`;},d=>option(d,'tarif','Üretilecek eşya',RECIPES,false)),
     command('karaborsa','Gizli tüccarın günlük saatleri ve özel eşyaları.',i=>shop(i,true)),
     command('garaj','Garaj seviyeni, ekipmanını ve çalışan durumunu göster.',i=>{const g=garageState(profile(i.guildId,i.user),now());return `🏁 **${g.name} · Seviye ${g.level}/10**\nGaraj XP: **${g.xp}${g.nextXp?` / ${g.nextXp}`:' · MAKSİMUM'}** · Araç kapasitesi: **${g.capacity??'Sınırsız'}**\nVardiya geliri: **+%${g.incomeBonus}** · Tamamlanan vardiya: **${g.shifts}**\nEkipman: ${Object.values(g.equipped).filter(Boolean).map(id=>GARAGE_UPGRADES.find(item=>item.id===id)?.name).filter(Boolean).join(', ')||'Başlangıç ekipmanı'}\nÇalışan: ${g.employee?`**${g.employee.title}** · Moral ${g.employee.morale}/100 · ${g.employee.pending.amount} PitCoin bekliyor`:'Yok · Hidrolik lift aldıktan sonra /işe-al'}\nÇekici: ${GARAGE_UPGRADES.find(item=>item.id===g.equipped.tow)?.name||'Yok'}`;}),
-    command('garaj-market','Garaj, çalışan ve çekici ekipmanı satın al.',i=>{const id=i.options.getString('ekipman');if(id)return act(i.guildId,i.user,'garageBuy',id,i.id);const g=garageState(profile(i.guildId,i.user),now());return `**Garaj marketi · Seviye ${g.level}**\n${GARAGE_UPGRADES.filter(item=>item.price).map(item=>`${item.unlocked?'🔓':'🔒'} **${item.name}** — ${item.price} PitCoin · Seviye ${item.level}${item.owned?' · Alındı':''}`).join('\n')}\n/garaj-market ekipman:... ile satın al.`;},d=>option(d,'ekipman','Satın alınacak garaj yükseltmesi',GARAGE_UPGRADES.filter(item=>item.price),false)),
+    command('garaj-market','Garaj, çalışan ve çekici ekipmanı satın al.',i=>{const id=i.options.getString('ekipman');if(id)return act(i.guildId,i.user,'garageBuy',id,i.id);const g=garageState(profile(i.guildId,i.user),now());return `**Garaj marketi · Seviye ${g.level}**\n${g.upgrades.filter(item=>item.price).map(item=>`${item.unlocked?'🔓':'🔒'} **${item.name}** — ${item.price} PitCoin · Seviye ${item.level}${item.owned?' · Kurulu':item.readyAt?' · Kargoda':''}`).join('\n')}\n/garaj-market ekipman:... ile satın al.`;},d=>option(d,'ekipman','Satın alınacak garaj yükseltmesi',GARAGE_UPGRADES.filter(item=>item.price),false)),
+    command('kargo-hızlandır','Garaj ekipmanını PitCoin karşılığında hemen kur.',mutate('garageExpedite','ekipman'),d=>option(d,'ekipman','Kargodaki ekipman',GARAGE_UPGRADES.filter(item=>item.price))),
+    command('ekipman-bakım','Garaj ekipmanının aşınmasını onar.',mutate('repairUpgrade','ekipman'),d=>option(d,'ekipman','Bakımı yapılacak ekipman',GARAGE_UPGRADES.filter(item=>item.price))),
     command('araçlarım','Günlük tamir işleri, parça deposu ve garajındaki araçlar.',i=>{const p=profile(i.guildId,i.user),v=vehicleState(i.guildId,i.user.id,p,now());return `🚗 **Araçlarım · ${v.occupied}/${v.capacity??'∞'} kapasite**\n**Depo:** ${VEHICLE_PARTS.map(part=>`${part.name} ${v.depot[part.id]||0}`).join(' · ')}\n**Bugünkü müşteriler:**\n${v.jobs.map((job,index)=>`${index+1}. ${job.name} — ${job.completed?'Tamamlandı':`${job.reward} PitCoin · ${Object.entries(job.parts).map(([id,count])=>`${count} ${VEHICLE_PARTS.find(part=>part.id===id).name}`).join(', ')}`}`).join('\n')}\n**Sahip olduğun araçlar:** ${v.vehicles.map(car=>`${car.model?.name||'Araç'} (${car.id.slice(0,8)}) · ${car.status==='repaired'?'Tamirli':'Bozuk'}`).join(', ')||'Yok'}\nGünlük müşteri araçları İstanbul gece yarısında yenilenir.`;}),
     command('parça-al','PitCoin ile garaj deposuna yedek parça al.',mutate('partBuy','parça'),d=>option(d,'parça','Depoya alınacak yedek parça',VEHICLE_PARTS)),
+    command('mod-kutusu','Rastgele modifiye parçası içeren kutu aç.',mutate('boxBuy','kutu'),d=>option(d,'kutu','Açılacak parça kutusu',VEHICLE_BOXES)),
+    command('hurdalık','160 PitCoin ile hurdalıkta araç veya parça ara.',i=>act(i.guildId,i.user,'junkyardSearch',null,i.id)),
     command('müşteri-tamir','Bugünkü müşteri aracını depodaki parçalarla tamir et.',i=>{const slot=i.options.getInteger('sıra'),jobs=vehicleState(i.guildId,i.user.id,profile(i.guildId,i.user),now()).jobs;return act(i.guildId,i.user,'jobRepair',jobs[slot-1]?.id||'',i.id);},d=>d.addIntegerOption(o=>o.setName('sıra').setDescription('Bugünkü iş sırası: 1, 2 veya 3').setRequired(true).setMinValue(1).setMaxValue(3))),
-    command('araba-al','Bozuk bir aracı satın alıp garajında tamir et.',mutate('carBuy','model'),d=>option(d,'model','Satın alınacak araç modeli',VEHICLE_MODELS)),
+    command('araba-al','Bozuk bir aracı satın alıp garajında tamir et.',mutate('carBuy','model'),d=>option(d,'model','Satın alınacak araç modeli',VEHICLE_MODELS.filter(model=>model.gallery!==false))),
     command('araba-tamir','Garajındaki bozuk aracı depodaki parçalarla tamir et.',i=>{const cars=vehicleState(i.guildId,i.user.id,profile(i.guildId,i.user),now()).vehicles,query=i.options.getString('araç'),car=query?cars.find(item=>item.id.startsWith(query)):cars.find(item=>item.status==='broken');return act(i.guildId,i.user,'carRepair',car?.id||'',i.id);},d=>d.addStringOption(o=>o.setName('araç').setDescription('/araçlarım listesindeki 8 karakterlik araç kodu').setRequired(false))),
+    command('araba-parçala','Bozuk aracını parçalarına ayırıp depoya aktar.',i=>{const cars=vehicleState(i.guildId,i.user.id,profile(i.guildId,i.user),now()).vehicles,query=i.options.getString('araç'),car=cars.find(item=>item.id.startsWith(query));return act(i.guildId,i.user,'carSalvage',car?.id||'',i.id);},d=>d.addStringOption(o=>o.setName('araç').setDescription('/araçlarım listesindeki araç kodu').setRequired(true))),
+    command('modifiye','Tamirli aracına depodan parça ile modifiye uygula.',i=>{const cars=vehicleState(i.guildId,i.user.id,profile(i.guildId,i.user),now()).vehicles,query=i.options.getString('araç'),car=cars.find(item=>item.id.startsWith(query));return act(i.guildId,i.user,'modApply',{carId:car?.id||'',modId:i.options.getString('mod')},i.id);},d=>d.addStringOption(o=>o.setName('araç').setDescription('/araçlarım listesindeki araç kodu').setRequired(true)).addStringOption(o=>o.setName('mod').setDescription('Uygulanacak modifiye').setRequired(true).addChoices(...choices(VEHICLE_MODS)))),
     command('araba-sat','Tamirli aracını 30 dakikalık açık artırmaya çıkar.',i=>{const cars=vehicleState(i.guildId,i.user.id,profile(i.guildId,i.user),now()).vehicles,query=i.options.getString('araç'),car=query?cars.find(item=>item.id.startsWith(query)):cars.find(item=>item.status==='repaired');return listVehicle(i.guildId,i.user,car?.id||'',i.id);},d=>d.addStringOption(o=>o.setName('araç').setDescription('/araçlarım listesindeki 8 karakterlik araç kodu').setRequired(false))),
     command('açık-artırma','Satıştaki araçları ve geçerli teklifleri göster.',i=>`🏁 **Açık artırma**\n${auctions(i.guildId).filter(a=>a.status==='open').slice(0,10).map(a=>`**${a.modelName}** (${a.id.slice(0,8)}) · ${a.currentBid} PitCoin · Bitiş <t:${Math.floor(a.endsAt/1000)}:R> · Satıcı: ${escapeMarkdown(a.sellerName)}`).join('\n')||'Şu anda açık araç ilanı yok.'}\nTeklif vermek için /teklif-ver kullan.`),
     command('teklif-ver','Başka bir oyuncunun aracına PitCoin teklifi ver.',i=>{const query=i.options.getString('ilan'),listing=auctions(i.guildId).find(a=>a.status==='open'&&a.id.startsWith(query));return bidVehicle(i.guildId,i.user,listing?.id||'',i.options.getInteger('tutar'),i.id);},d=>d.addStringOption(o=>o.setName('ilan').setDescription('/açık-artırma listesindeki 8 karakterlik ilan kodu').setRequired(true)).addIntegerOption(o=>o.setName('tutar').setDescription('Geçerli tekliften en az 50 PitCoin fazla').setRequired(true).setMinValue(1))),
@@ -399,5 +475,5 @@ export function createRpg(store, { now=Date.now,roll=randomInt,client,logger=()=
       if(i.deferred||i.replied)await i.followUp({content,flags:MessageFlags.Ephemeral,allowedMentions:noMentions}).catch(()=>{});else await i.reply({content,flags:MessageFlags.Ephemeral,allowedMentions:noMentions}).catch(()=>{});
     }
   }
-  return {commands,act,profile,startActivity,claimActivity,equip,sell,webState,listVehicle,bidVehicle,auctions,transfer,challenge,resolveDuel,handleInteraction};
+  return {commands,act,profile,startActivity,claimActivity,equip,sell,webState,listVehicle,bidVehicle,auctions,dispatchRoadsideCalls,transfer,challenge,resolveDuel,handleInteraction};
 }

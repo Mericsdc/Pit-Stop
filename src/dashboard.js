@@ -19,6 +19,7 @@ const staticFiles = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/rpg-view.js', ['rpg-view.js', 'text/javascript; charset=utf-8']],
   ['/rpg-vehicles-view.js', ['rpg-vehicles-view.js', 'text/javascript; charset=utf-8']],
+  ['/rpg-garage-scene.js', ['rpg-garage-scene.js', 'text/javascript; charset=utf-8']],
   ['/site-config.js', ['site-config.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/layout.css', ['layout.css', 'text/css; charset=utf-8']],
@@ -385,12 +386,12 @@ export function createDashboard({ client, store, music, features, crew, boostedE
             if (!fight) throw new RpgError('Devam eden bir zindan savaşın yok.');
             message = rpg.act(guildId, user, 'dungeonTurn', { id: fight.id, turn: fight.turn, move: body.move }, requestId);
           } else if (area === 'garage' && operation === 'action') {
-            const allowed = new Set(['garageBuy', 'hireEmployee', 'employeeBonus', 'employeeLeave', 'employeeCollect', 'autoWork', 'repairEmployee', 'roadside']);
+            const allowed = new Set(['garageBuy', 'garageExpedite', 'repairUpgrade', 'hireEmployee', 'employeeBonus', 'employeeLeave', 'employeeCollect', 'autoWork', 'repairEmployee', 'roadside']);
             if (!allowed.has(body.action)) throw new RpgError('Geçersiz garaj işlemi.');
             message = rpg.act(guildId, user, body.action, body.upgradeId || null, requestId);
           } else if (area === 'vehicles' && operation === 'action') {
-            if (!['partBuy', 'jobRepair', 'carBuy', 'carRepair'].includes(body.action)) throw new RpgError('Geçersiz araç işlemi.');
-            message = rpg.act(guildId, user, body.action, body.choiceId || null, requestId);
+            if (!['partBuy', 'boxBuy', 'junkyardSearch', 'jobRepair', 'carBuy', 'carRepair', 'carSalvage', 'modApply'].includes(body.action)) throw new RpgError('Geçersiz araç işlemi.');
+            message = rpg.act(guildId, user, body.action, body.action === 'modApply' ? { carId: body.carId, modId: body.modId } : body.choiceId || null, requestId);
           } else if (area === 'vehicles' && operation === 'list') message = rpg.listVehicle(guildId, user, body.carId, requestId);
           else if (area === 'vehicles' && operation === 'bid') message = rpg.bidVehicle(guildId, user, body.auctionId, body.amount, requestId);
           else if (area === 'craft' && operation === 'create') message = rpg.act(guildId, user, 'craft', body.recipeId, requestId);

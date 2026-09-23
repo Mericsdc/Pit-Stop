@@ -50,6 +50,11 @@ const EMPLOYEE_LEVELS = Object.freeze([
 ]);
 
 const byId = id => GARAGE_UPGRADES.find(item => item.id === id);
+const installUpgrade = (garage, item) => {
+  if (!garage.owned.includes(item.id)) garage.owned.push(item.id);
+  garage.durability[item.id] ??= 100;
+  if (item.category !== 'facility') garage.equipped[item.category] = item.id;
+};
 export const garageLevel = xp => [...GARAGE_LEVELS].reverse().find(item => Number(xp || 0) >= item.xp) || GARAGE_LEVELS[0];
 const employeeLevel = xp => [...EMPLOYEE_LEVELS].reverse().find(item => Number(xp || 0) >= item.xp) || EMPLOYEE_LEVELS[0];
 
@@ -62,6 +67,11 @@ export function normalizeGarage(player, time) {
   };
   garage.owned = [...new Set(['pasli-aletler', 'timsah-kriko', ...(Array.isArray(garage.owned) ? garage.owned : [])])].filter(id => byId(id));
   garage.equipped = { tools: 'pasli-aletler', lift: 'timsah-kriko', diagnostic: null, tow: null, employeeTools: null, employeeStation: null, ...(garage.equipped || {}) };
+  garage.durability = garage.durability && typeof garage.durability === 'object' ? garage.durability : {};
+  for (const id of garage.owned) garage.durability[id] = Math.max(0, Math.min(100, Number(garage.durability[id] ?? 100)));
+  garage.orders = Array.isArray(garage.orders) ? garage.orders.filter(order => byId(order?.id) && Number.isFinite(order?.readyAt)) : [];
+  for (const order of garage.orders.filter(order => order.readyAt <= time)) installUpgrade(garage, byId(order.id));
+  garage.orders = garage.orders.filter(order => order.readyAt > time);
   if (garage.employee) {
     garage.employee = {
       xp: 0, morale: 100, leaveUntil: null, leaveStartedAt: null, lastCollectedAt: time,
@@ -90,7 +100,7 @@ export function garageWorkDuration(player) {
   const garage = player.garage;
   const lift = byId(garage?.equipped?.lift);
   const fast = garage?.nextFastShifts > 0 ? 15 : 0;
-  return Math.max(5, 30 - Number(lift?.cooldownMinutes || 0) - fast) * 60_000;
+  return Math.max(5, 30 - (Number(garage?.durability?.[lift?.id] ?? 100) > 0 ? Number(lift?.cooldownMinutes || 0) : 0) - fast) * 60_000;
 }
 
 export function resolveGarageShift(player, { time, roll, baseGold, baseXp }) {
@@ -108,13 +118,17 @@ export function resolveGarageShift(player, { time, roll, baseGold, baseXp }) {
     garage.employee.durability.station = Math.max(0, garage.employee.durability.station - durabilityLoss);
     employeeNote = `${rank.name} desteği +%${employeeBonus}`;
   }
-  const percent = levelInfo.incomeBonus + Number(tools?.incomeBonus || 0) + employeeBonus;
+  const workingTools = Number(garage.durability[tools?.id] ?? 100) > 0;
+  const workingLift = Number(garage.durability[lift?.id] ?? 100) > 0;
+  const workingDiagnostic = Number(garage.durability[diagnostic?.id] ?? 100) > 0;
+  const percent = levelInfo.incomeBonus + (workingTools ? Number(tools?.incomeBonus || 0) : 0) + employeeBonus;
   let gold = Math.floor(baseGold * (1 + percent / 100)), xp = baseXp;
-  const double = Number(lift?.doubleChance || 0) && roll(1, 101) <= lift.doubleChance;
+  const double = workingLift && Number(lift?.doubleChance || 0) && roll(1, 101) <= lift.doubleChance;
   if (double) { gold *= 2; xp *= 2; }
-  const garageXp = Math.floor(45 * (1 + Number(diagnostic?.xpBonus || 0) / 100));
+  const garageXp = Math.floor(45 * (1 + (workingDiagnostic ? Number(diagnostic?.xpBonus || 0) : 0) / 100));
   garage.xp = Math.min(1_000_000_000, garage.xp + garageXp);
   garage.shifts++;
+  for (const id of [garage.equipped.tools, garage.equipped.lift, garage.equipped.diagnostic].filter(Boolean)) garage.durability[id] = Math.max(0, Number(garage.durability[id] ?? 100) - 1);
   if (garage.nextFastShifts > 0) garage.nextFastShifts--;
   let eventText = '', penalty = 0;
   if (roll(1, 101) <= 12) {
@@ -151,14 +165,31 @@ export function garageAction(player, action, choice, { time, roll }) {
   if (action === 'garageBuy') {
     const item = byId(choice);
     if (!item || !item.price) throw new Error('Geçerli bir garaj ekipmanı seç.');
-    if (garage.owned.includes(item.id)) throw new Error('Bu ekipman zaten garajında.');
+    if (garage.owned.includes(item.id) || garage.orders.some(order => order.id === item.id)) throw new Error('Bu ekipman zaten garajında veya kargoda.');
     if (levelInfo.level < item.level) throw new Error(`Bu ekipman için Garaj Seviye ${item.level} gerekli.`);
     if (item.employeeLevel && !garage.employee) throw new Error('Önce bir çalışan işe almalısın.');
     if (item.employeeLevel && employeeLevel(garage.employee.xp).level < item.employeeLevel) throw new Error(`Bu ekipman için çalışan Seviye ${item.employeeLevel} gerekli.`);
     if (player.coins < item.price) throw new Error('Bu ekipman için PitCoin bakiyen yetersiz.');
-    player.coins -= item.price; garage.owned.push(item.id);
-    if (item.category !== 'facility') garage.equipped[item.category] = item.id;
-    return `${item.symbol} **${item.name}** garaja eklendi ve kullanıma alındı. Bakiye: **${player.coins} PitCoin**.`;
+    player.coins -= item.price;
+    garage.orders.push({ id: item.id, orderedAt: time, readyAt: time + 15 * 60_000, price: item.price });
+    return `${item.symbol} **${item.name}** sipariş edildi. 15 dakika sonra kurulacak. Bakiye: **${player.coins} PitCoin**.`;
+  }
+  if (action === 'garageExpedite') {
+    const order = garage.orders.find(entry => entry.id === choice), item = byId(order?.id);
+    if (!order || !item) throw new Error('Hızlandırılacak kargo bulunamadı.');
+    const cost = Math.max(50, Math.ceil(order.price * .15));
+    if (player.coins < cost) throw new Error(`Hızlı kurulum için ${cost} PitCoin gerekli.`);
+    player.coins -= cost; installUpgrade(garage, item); garage.orders = garage.orders.filter(entry => entry.id !== choice);
+    return `${item.name} ${cost} PitCoin karşılığında hemen kuruldu.`;
+  }
+  if (action === 'repairUpgrade') {
+    const item = byId(choice);
+    if (!item || !garage.owned.includes(item.id)) throw new Error('Bu ekipman garajında bulunmuyor.');
+    const damage = 100 - Number(garage.durability[item.id] ?? 100), cost = Math.ceil(damage * 3);
+    if (!damage) throw new Error('Bu ekipman zaten sağlam.');
+    if (player.coins < cost) throw new Error(`Bakım için ${cost} PitCoin gerekli.`);
+    player.coins -= cost; garage.durability[item.id] = 100;
+    return `${item.name} bakımı tamamlandı. -${cost} PitCoin.`;
   }
   if (action === 'hireEmployee') {
     if (!garage.owned.includes('hidrolik-lift')) throw new Error('Çalışan almak için Çift Sütunlu Hidrolik Lift gerekli.');
@@ -213,8 +244,10 @@ export function garageAction(player, action, choice, { time, roll }) {
   if (action === 'roadside') {
     const tow = byId(garage.equipped.tow);
     if (levelInfo.level < 4 || !tow) throw new Error('Yol yardımı için Garaj Seviye 4 ve bir çekici gerekli.');
+    if (Number(garage.durability[tow.id] ?? 100) <= 0) throw new Error('Çekici aşındı. Önce ekipman bakımı yapmalısın.');
     if (garage.roadsideCooldown > time) throw new Error(`Çekici operasyonda. ${Math.ceil((garage.roadsideCooldown - time) / 60_000)} dakika beklemelisin.`);
     const die = roll(1, 101), risk = Number(tow.risk || 0); garage.roadsideCooldown = time + 30 * 60_000;
+    garage.durability[tow.id] = Math.max(0, Number(garage.durability[tow.id] ?? 100) - 1);
     if (die <= risk) { const loss = Math.min(player.coins, 300); player.coins -= loss; return `💥 Kurtarma başarısız oldu. **-${loss} PitCoin** tamir masrafı; çekici 30 dakika arızalı.`; }
     if (die <= risk + 25) { player.coins += 150; return '🔧 Yerinde müdahale tamamlandı. **+150 PitCoin**.'; }
     const vip = tow.id === 'ahtapot-kurtarici' && roll(1, 101) <= 20, reward = vip ? 700 : 400, xp = vip ? 120 : 75;
@@ -233,7 +266,8 @@ export function garageState(player, time) {
   return {
     xp: garage.xp, xpStart: current.xp, shifts: garage.shifts, level: current.level, name: current.name, capacity: current.capacity,
     incomeBonus: current.incomeBonus, nextXp: next?.xp || null, owned: garage.owned, equipped: garage.equipped,
-    upgrades: GARAGE_UPGRADES.map(item => ({ ...item, owned: garage.owned.includes(item.id), equipped: garage.equipped[item.category] === item.id, unlocked: current.level >= item.level && (!item.employeeLevel || (employee && employee.level >= item.employeeLevel)) })),
+    upgrades: GARAGE_UPGRADES.map(item => ({ ...item, owned: garage.owned.includes(item.id), equipped: garage.equipped[item.category] === item.id, durability: garage.durability[item.id] ?? null, readyAt: garage.orders.find(order => order.id === item.id)?.readyAt || null, unlocked: current.level >= item.level && (!item.employeeLevel || (employee && employee.level >= item.employeeLevel)) })),
+    orders: garage.orders, durability: garage.durability,
     employee, roadsideReadyAt: garage.roadsideCooldown || 0, nextFastShifts: garage.nextFastShifts || 0,
     workMinutes: garageWorkDuration(player) / 60_000,
   };
