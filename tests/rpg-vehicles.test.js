@@ -29,6 +29,7 @@ test('daily customer repairs use depot parts, reward once and reset at Istanbul 
   assert.match(rpg.act(GUILD, seller, 'jobRepair', job.id, 'job_claim'), /tamir edildi/);
   assert.equal(rpg.profile(GUILD, seller).coins, before + job.reward);
   assert.equal(rpg.webState(GUILD, seller).vehicles.jobs[0].completed, true);
+  assert.deepEqual(rpg.webState(GUILD, seller).vehicles.recentJob, { modelId: job.modelId, completedAt: Date.parse('2026-09-23T08:00:00+03:00') });
   assert.throws(() => rpg.act(GUILD, seller, 'jobRepair', job.id, 'job_again'), /zaten tamir/);
   advance(16 * 60 * 60_000);
   assert.equal(rpg.webState(GUILD, seller).vehicles.jobs[0].completed, false);

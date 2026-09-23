@@ -75,6 +75,8 @@ test('garage links to the vehicle dashboard with daily jobs, depot and auction c
   assert.match(html, /data-rpg-action="part-buy"/u);
   assert.match(html, /data-rpg-action="job-repair"/u);
   assert.match(html, /rpg-garage-isometric/u);
+  assert.match(html, /rpg-garage-interactive/u);
+  assert.match(html, /data-rpg-scene-bay="0"/u);
   assert.match(html, /MODİFİYE VE TASARIM ATÖLYESİ/u);
   assert.match(html, /data-rpg-action="box-buy"/u);
   assert.match(html, /data-rpg-action="junkyard-search"/u);

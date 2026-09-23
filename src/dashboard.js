@@ -20,6 +20,7 @@ const staticFiles = new Map([
   ['/rpg-view.js', ['rpg-view.js', 'text/javascript; charset=utf-8']],
   ['/rpg-vehicles-view.js', ['rpg-vehicles-view.js', 'text/javascript; charset=utf-8']],
   ['/rpg-garage-scene.js', ['rpg-garage-scene.js', 'text/javascript; charset=utf-8']],
+  ['/rpg-garage-interactive.js', ['rpg-garage-interactive.js', 'text/javascript; charset=utf-8']],
   ['/site-config.js', ['site-config.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/layout.css', ['layout.css', 'text/css; charset=utf-8']],

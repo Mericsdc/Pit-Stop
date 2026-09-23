@@ -120,6 +120,7 @@ export function vehicleState(guildId, playerId, player, time) {
     capacity: rank.capacity, occupied: garage.vehicles.length,
     nextJobsAt: Date.parse(`${dateKey(time + 86_400_000)}T00:00:00+03:00`),
     junkyardReadyAt: garage.junkyardReadyAt, marketOpen,
+    recentJob: garage.repairJobs.recent || null,
   };
 }
 
@@ -174,6 +175,7 @@ export function vehicleAction(player, guildId, playerId, action, choice, { time,
     requireRpg(job.ready, 'Bu aracı tamir etmek için depodaki parçalar yetersiz.');
     consumeParts(garage.depot, job.parts);
     garage.repairJobs.completed.push(Number(choice.split(':')[1]));
+    garage.repairJobs.recent = { modelId: job.modelId, completedAt: time };
     credit(player, job.reward, 0);
     garage.xp += job.xp;
     return `${job.name} tamir edildi. +${job.reward} PitCoin · +${job.xp} Garaj XP.`;

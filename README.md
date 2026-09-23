@@ -85,6 +85,8 @@ Bu sürüm şema değişikliği veya ek environment variable gerektirmez.
 
 Garaj sahnesi oyuncunun gerçek seviyesi, araç doluluğu, lift, boya kabini ve diagnostik cihazına göre SVG olarak çizilir. Garaj ekipmanı satın alınınca 15 dakika kargoda kalır; PitCoin ile hızlandırılabilir. Kullanılan ekipman aşınır, bakım yapılmazsa bonusu durur. Araç deposunda görsel ve performans modları, dört nadirlikte parça kutusu, 45 dakikalık hurdalık keşfi ve bozuk araç parçalama bulunur. Nadir parçalarda karaborsa saatleri ve oyuncu başına günlük/haftalık stok geçerlidir. Modifiye başarı şansı ve sonuçları sunucuda hesaplanır. Açık artırmalarda pasif ve agresif oyun içi alıcılar 1–3 dakikalık aralıklarla teklif verebilir; oyuncu teklifi geçilirse ayrılan PitCoin iade edilir. **Başarı duyuruları** kanalı seçiliyse bot o kanalda aralıklı 60 saniyelik SOS çağrısı yayınlar; uygun garaj ve çekiciye sahip ilk `/yol-yardım` oyuncusu çağrıyı alır. Web ve Discord işlemleri aynı kayıtları kullanır. Yeni komutlar: `/mod-kutusu`, `/hurdalık`, `/araba-parçala`, `/modifiye`, `/kargo-hızlandır`, `/ekipman-bakım`.
 
+Garaj sahnesindeki araç yuvaları artık oyuncunun gerçek araç modelini gösterir. Bozuk araçta depoda hazır olan parça oranı, vardiyada ise sunucudaki başlangıç ve bitiş zamanına bağlı ilerleme çizgisi görünür. Ekipman kartına veya sahnedeki kurulu ekipmana tıklanınca kargo süresi ya da dayanıklılık açılır. Teslim edilen ekipman sahnede kısa bir yerleşme animasyonuyla görünür; gece tonu ve düşük moral/dayanıklılık uyarıları oyun durumundan gelir.
+
 ## Web sitesi ve canlı panel
 
 GitHub Pages adresi: **https://mericsdc.github.io/Pit-Stop/**

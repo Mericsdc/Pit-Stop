@@ -246,6 +246,7 @@ function renderRpg() {
 function rpgBody(data) { return renderRpgContent(data, { escape, number, date, empty }, state.rpgSection, state.rpgLastResult); }
 let rpgLoading = false;
 let lastRpgRefreshAt = 0;
+let lastGarageDeliveryRefresh = '';
 function renderRpgState() {
   const content = $('#rpg-content');
   if (content && state.rpgData) { content.innerHTML = rpgBody(state.rpgData); updateRpgTimers(); }
@@ -284,8 +285,15 @@ async function rpgRequest(path, body = {}) {
 function updateRpgTimers() {
   if (state.view !== 'rpg') return;
   let expiredActivity = false, expiredDaily = false;
+  const serverNow = Date.now() + state.rpgClockOffset;
+  for (const node of $$('[data-rpg-scene-progress]')) {
+    const start = Number(node.dataset.startedAt), end = Number(node.dataset.endsAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    const value = Math.max(0, Math.min(100, (serverNow - start) / (end - start) * 100));
+    node.querySelector('i')?.style.setProperty('width', `${value}%`);
+    node.setAttribute('aria-valuenow', String(Math.round(value)));
+  }
   for (const node of $$('[data-rpg-countdown]')) {
-    const serverNow = Date.now() + state.rpgClockOffset;
     const endsAt = Number(node.dataset.endsAt);
     if (!Number.isFinite(endsAt) || endsAt <= 0) { node.textContent = '—'; continue; }
     if (node.hasAttribute('data-rpg-daily-countdown') && state.rpgData?.player?.daily?.available) { node.textContent = 'Şimdi alınabilir'; continue; }
@@ -300,6 +308,11 @@ function updateRpgTimers() {
     if (left <= 0 && state.rpgData?.activity?.status === 'active' && Number(state.rpgData.activity.endsAt) <= serverNow) expiredActivity = true;
     if (left <= 0 && node.hasAttribute('data-rpg-daily-countdown') && !state.rpgData?.player?.daily?.available) expiredDaily = true;
   }
+  const dueDelivery = state.rpgData?.garage?.upgrades?.find(item => item.readyAt && Number(item.readyAt) <= serverNow);
+  if (dueDelivery && !rpgLoading) {
+    const key = `${state.guild?.id}:${dueDelivery.id}:${dueDelivery.readyAt}`;
+    if (key !== lastGarageDeliveryRefresh) { lastGarageDeliveryRefresh = key; void loadRpg({ silent: true }); }
+  }
   if (expiredActivity) {
     state.rpgData.activity.status = 'ready';
     renderRpgState();
@@ -307,6 +320,52 @@ function updateRpgTimers() {
     state.rpgData.player.daily.available = true;
     renderRpgState();
   }
+}
+
+function showGaragePopover(button) {
+  const popover = $('#rpg-garage-popover'), data = state.rpgData;
+  if (!popover || !data) return;
+  const title = popover.querySelector('[data-rpg-scene-title]'), detail = popover.querySelector('[data-rpg-scene-detail]');
+  const meter = popover.querySelector('.rpg-scene-popover-meter'), label = popover.querySelector('[data-rpg-scene-meter-label]');
+  const fill = popover.querySelector('[data-rpg-scene-meter]'), vehiclesLink = popover.querySelector('[data-rpg-scene-vehicles]');
+  meter.hidden = true;
+  vehiclesLink.hidden = !button.hasAttribute('data-rpg-scene-bay');
+  if (button.hasAttribute('data-rpg-scene-gear')) {
+    const gear = data.garage?.upgrades?.find(item => item.id === button.dataset.rpgSceneGear);
+    if (!gear) return;
+    $$('[data-rpg-scene-gear]').forEach(node => node.classList.toggle('selected', node.dataset.rpgSceneGear === gear.id));
+    title.textContent = gear.name;
+    detail.textContent = gear.description || '';
+    if (gear.readyAt) {
+      detail.append(document.createElement('br'), document.createTextNode('Kargo / kurulum: '));
+      const countdown = document.createElement('span');
+      countdown.setAttribute('data-rpg-countdown', '');
+      countdown.dataset.endsAt = String(gear.readyAt);
+      detail.append(countdown);
+    } else {
+      const durability = Math.max(0, Math.min(100, Number(gear.durability ?? 100)));
+      label.textContent = `Dayanıklılık ${durability}/100`;
+      fill.style.width = `${durability}%`;
+      meter.hidden = false;
+    }
+  } else {
+    $$('[data-rpg-scene-gear]').forEach(node => node.classList.remove('selected'));
+    const car = data.vehicles?.vehicles?.[Number(button.dataset.rpgSceneBay)];
+    title.textContent = car?.model?.name || 'Boş araç yuvası';
+    if (!car) detail.textContent = 'Galeriden araç alarak bu yuvaya yerleştirebilirsin.';
+    else if (car.status === 'broken') {
+      const needs = Object.entries(car.model?.parts || {});
+      const required = needs.reduce((sum, [, count]) => sum + Number(count), 0);
+      const available = needs.reduce((sum, [id, count]) => sum + Math.min(Number(count), Number(data.vehicles?.depot?.[id] || 0)), 0);
+      const readiness = Math.round(Math.max(0, Math.min(100, required ? available / required * 100 : 0)));
+      detail.textContent = 'Tamir için gerekli parçalar depoda biriktiriliyor.';
+      label.textContent = `Parça hazırlığı ${available}/${required}`;
+      fill.style.width = `${readiness}%`;
+      meter.hidden = false;
+    } else detail.textContent = 'Araç tamir edildi. Modifiye yapabilir veya açık artırmaya çıkarabilirsin.';
+  }
+  popover.hidden = false;
+  updateRpgTimers();
 }
 
 function renderCommunity() {
@@ -511,6 +570,8 @@ document.addEventListener('click', async event => {
     if (button.id === 'menu-toggle') { setMenuOpen(!document.body.classList.contains('menu-open')); return; }
     if (button.id === 'menu-backdrop') { setMenuOpen(false); return; }
     if (button.dataset.rpgDismissResult !== undefined) { state.rpgLastResult = null; renderRpgState(); return; }
+    if (button.hasAttribute('data-rpg-scene-close')) { $('#rpg-garage-popover').hidden = true; return; }
+    if (button.hasAttribute('data-rpg-scene-gear') || button.hasAttribute('data-rpg-scene-bay')) { showGaragePopover(button); return; }
     if (button.id === 'toggle-code') { const input = $('#login-code'), showing = input.type === 'text'; input.type = showing ? 'password' : 'text'; button.textContent = showing ? 'Göster' : 'Gizle'; button.setAttribute('aria-label', showing ? 'Kodu göster' : 'Kodu gizle'); return; }
     if (button.dataset.rpgSection) { state.rpgSection = button.dataset.rpgSection; renderRpgState(); $('#rpg-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (button.dataset.rpgFilter) {

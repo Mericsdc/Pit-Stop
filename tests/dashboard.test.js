@@ -205,6 +205,7 @@ test('RPG announcement channel changes use protected settings and validate guild
   assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: null }, { 'X-CSRF-Token': 'wrong' })).status, 403);
   assert.equal((await fixture.request('/rpg-view.js')).status, 200);
   assert.equal((await fixture.request('/rpg-garage-scene.js')).status, 200);
+  assert.equal((await fixture.request('/rpg-garage-interactive.js')).status, 200);
 });
 
 test('OAuth HTTP flow issues protected state/session cookies and attempts silent reuse first', async (t) => {
