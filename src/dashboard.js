@@ -25,6 +25,7 @@ const staticFiles = new Map([
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/layout.css', ['layout.css', 'text/css; charset=utf-8']],
   ['/assets/login-brand.png', ['assets/login-brand.png', 'image/png']],
+  ['/assets/lrx-brand.png', ['assets/lrx-brand.png', 'image/png']],
   ['/assets/logo.webp', ['assets/logo.webp', 'image/webp']],
   ['/assets/banner.webp', ['assets/banner.webp', 'image/webp']],
 ]);
