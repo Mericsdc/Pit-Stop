@@ -87,6 +87,7 @@ export const commands = [
   command('yardim', 'Pit-Stop komutlarını ve kullanım örneklerini gösterir.', async (interaction) => {
     return privateReply(interaction, 'Garaja hoş geldin', [
       '**/ping** — Botun bağlantı ve komut gecikmesini ölçer.',
+      '**!map Harita Adı** veya **/map harita** — NRZ normal ve Time Attack ilk 10 sürelerini, araçları ve mevcut tuning ayarlarını gösterir.',
       '**/sunucu** — Sunucunun temel bilgilerini gösterir.',
       '**/avatar [kullanici]** — Senin veya seçtiğin kişinin profil resmini gösterir.',
       '**/anket soru secenekler [sure] [coklu]** — Discord anketi oluşturur.',

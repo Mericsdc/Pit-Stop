@@ -92,7 +92,7 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
   if (next.defenseEnabled && (!next.defenseChannelId || !next.supportRoleId)) throw httpError(400, 'Savunma sistemi için ana kanal ve destek rolü seçin.');
 }
 
-export function createDashboard({ client, store, music, features, crew, boostedEvents, rpg: suppliedRpg, config, logger = () => {}, fetcher = fetch }) {
+export function createDashboard({ client, store, music, features, crew, boostedEvents, nrz, rpg: suppliedRpg, config, logger = () => {}, fetcher = fetch }) {
   const sessions = new Map(), pendingStates = new Map(), limits = new Map(), weatherCache = new Map();
   const rpg = suppliedRpg || createRpg(store, { client, logger });
   const base = new URL(config.publicUrl);
@@ -406,10 +406,16 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         json(response, 200, { ok: true, message, state: rpg.webState(guildId, user, { avatar }) });
         return;
       }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles|rpg))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles|rpg|nrz-maps|nrz-map))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
+      if (resource === 'nrz-maps' && request.method === 'GET') { json(response, 200, { maps: await nrz.catalog() }); return; }
+      if (resource === 'nrz-map' && request.method === 'GET') {
+        const name = url.searchParams.get('name')?.trim() || '';
+        if (!name || name.length > 100) throw httpError(400, 'Harita adını 1–100 karakter arasında yazın.');
+        json(response, 200, await nrz.getMap(name)); return;
+      }
       if (resource === 'rpg' && request.method === 'GET') { json(response, 200, rpg.webState(guildId, member.user || session.user, { avatar: typeof member.displayAvatarURL === 'function' ? member.displayAvatarURL({ extension: 'webp', size: 128 }) : null })); return; }
       if (!resource && request.method === 'GET') {
         await Promise.all([guild.channels.fetch(), guild.roles.fetch(), guild.emojis?.fetch?.() || Promise.resolve()]);

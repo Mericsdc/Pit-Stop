@@ -20,10 +20,10 @@ for (const media of document.querySelectorAll('img, video')) media.draggable = f
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0, rpgLastResult: null };
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0, rpgLastResult: null, nrzMaps: null, nrzResult: null };
 let guildLoadVersion = 0;
-const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
-const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
+const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', nrz: 'NRZ yarış sıralaması', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
+const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'nrz', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
 const defaultNavOrder = Object.values(navGroups).flat();
 const panelViewKey = 'pitstop-current-view';
 const sidebarCollapsedKey = 'pitstop-sidebar-collapsed';
@@ -105,6 +105,7 @@ const check = value => value ? 'checked' : '';
 const badge = (value, yes = 'Etkin', no = 'Kapalı') => `<span class="badge ${value ? 'on' : 'off'}">${value ? '●' : '○'} ${escape(value ? yes : no)}</span>`;
 const number = value => Number(value || 0).toLocaleString('tr-TR');
 const duration = ms => `${Math.floor((ms || 0) / 60000)}:${String(Math.floor((ms || 0) / 1000) % 60).padStart(2, '0')}`;
+const raceTime = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
 const uptime = seconds => seconds >= 86400 ? `${Math.floor(seconds / 86400)} gün` : seconds >= 3600 ? `${Math.floor(seconds / 3600)} sa` : `${Math.floor(seconds / 60)} dk`;
 const date = value => value ? new Date(value).toLocaleString('tr-TR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) : '—';
 function greetingText() {
@@ -401,6 +402,48 @@ function renderBoosted() {
   const progress = event.event?.endsAt ? `<section class="boosted-progress" data-ends-at="${Number(event.event.endsAt)}"><div class="boosted-progress-head"><strong>30 dakikalık yarış süresi</strong><span data-boosted-progress-text>Hesaplanıyor…</span></div><div class="boosted-progress-track" role="progressbar" aria-label="Boosted Event kalan süre" aria-valuemin="0" aria-valuemax="100"><span data-boosted-progress-fill></span></div></section>` : '';
   return `<form id="boosted-form" class="card form-stack"><div class="card-header"><div><h3>Boosted Event takibi</h3><p class="muted tiny">NightRiderz canlı haritası saat ve yarım saat güncellemelerinden sonra kontrol edilir.</p></div>${badge(s.boostedEventEnabled)}</div>${toggle('boosted-event-enabled', 'Etkinlik duyuruları', 'Yeni yarış bulunduğunda seçilen kanala bağlantı, sınıf ve bitiş saatiyle gönder; sınıf simgesini mesaja tepki olarak ekler.', s.boostedEventEnabled)}<label>Bildirim kanalı<select id="boosted-event-channel">${channelOptions(s.boostedEventChannelId || event.channelId)}</select></label>${progress}<p class="muted tiny">Son kontrol: ${date(event.checkedAt)}${event.event ? ` · <a href="${escape(event.event.url || `https://nightriderz.world/leaderboard/${event.event.id}`)}" target="_blank" rel="noopener noreferrer">${escape(event.event.name)}</a> · ${escape(event.event.className)}${event.event.endsAt ? ` · Bitiş: ${date(event.event.endsAt)}` : ''}` : ''}</p>${event.error ? `<p class="hint">${escape(event.error)}</p>` : ''}<div class="form-actions"><button type="button" class="button subtle" id="refresh-boosted-event">Şimdi kontrol et ve bildir</button><button class="button primary">Ayarları kaydet</button></div></form>`;
 }
+
+function renderNrzRows(label, id, rows) {
+  const href = id ? `https://nightriderz.world/leaderboard/${id}/1/${id >= 5000 ? 'nopu' : 'pu'}` : null;
+  return `<section class="card nrz-board"><div class="card-header"><div><h3>${escape(label)}</h3><p class="muted tiny">En hızlı 10 geçerli derece</p></div>${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">NRZ’de aç ↗</a>` : ''}</div>${!rows?.length ? '<p class="muted">Bu modda henüz derece bulunamadı.</p>' : `<div class="table-wrap"><table><thead><tr><th>#</th><th>Süre</th><th>Sürücü</th><th>Araç</th><th>Puan ve tuning</th></tr></thead><tbody>${rows.map((row, index) => {
+    const setup = row.setupHash ? `https://nightriderz.world/car/${encodeURIComponent(row.setupHash)}` : null;
+    const tuning = row.tuning;
+    const parts = [['Performans', tuning?.performance], ['Yetenek', tuning?.skills], ['Görsel', tuning?.visual]]
+      .filter(([, values]) => values?.length).map(([title, values]) => `<p><strong>${title}:</strong> ${values.map(escape).join(' · ')}</p>`).join('');
+    return `<tr><td data-label="Sıra">${index + 1}</td><td data-label="Süre"><strong>${raceTime(row.milliseconds)}</strong></td><td data-label="Sürücü">${escape(row.driver)}</td><td data-label="Araç">${escape(row.car)}</td><td data-label="Tuning">${row.rating ? `${number(row.rating)} puan` : '—'}${parts || setup ? `<details class="nrz-setup"><summary>Araç ayarları</summary>${parts || '<p>Parça verisi NRZ’de mevcut değil.</p>'}${setup ? `<a href="${setup}" target="_blank" rel="noopener noreferrer">Tam kurulumu NRZ’de aç ↗</a>` : ''}</details>` : ''}</td></tr>`;
+  }).join('')}</tbody></table></div>`}</section>`;
+}
+
+function renderNrzResult(result) {
+  if (!result) return '<p class="muted">Harita seçince normal ve Time Attack dereceleri burada görünecek.</p>';
+  if (!result.map) {
+    const choices = result.suggestions || [];
+    return choices.length ? `<section class="card"><h3>Harita seç</h3><div class="nrz-suggestions">${choices.map(map => `<button type="button" class="button subtle" data-nrz-map="${escape(map.name)}">${escape(map.name)}</button>`).join('')}</div></section>` : '<section class="card"><p>Bu isimde yarış bulunamadı. NRZ’deki harita adını kontrol edin.</p></section>';
+  }
+  const map = result.map;
+  return `<div class="nrz-result-heading"><h3>${escape(map.name)}</h3><span class="badge ${map.active ? 'on' : 'off'}">${map.active ? 'Aktif yarış' : 'Tüm yarışlar'}</span></div><div class="nrz-boards">${renderNrzRows('Normal yarış', map.id, result.normal)}${renderNrzRows('Time Attack', map.timeAttackId, result.timeAttack)}</div>`;
+}
+
+function renderNrz() {
+  return `<section class="card nrz-search"><div class="card-header"><div><h3>NRZ harita dereceleri</h3><p class="muted tiny">Tüm yarış etkinliklerinde ara. Discord’da <code>!map Harita Adı</code> veya <code>/map</code> kullanabilirsin.</p></div><span id="nrz-map-count" class="badge">${state.nrzMaps ? `${state.nrzMaps.length} harita` : 'Haritalar yükleniyor…'}</span></div><form id="nrz-map-form" class="nrz-search-form"><label for="nrz-map-name" class="sr-only">Harita adı</label><input id="nrz-map-name" name="name" type="search" list="nrz-map-options" maxlength="100" placeholder="Örn. Agathe Street" required value="${escape(state.nrzResult?.map?.name || '')}"><datalist id="nrz-map-options">${(state.nrzMaps || []).map(map => `<option value="${escape(map.name)}"></option>`).join('')}</datalist><button class="button primary" type="submit">İlk 10’u göster</button></form></section><div id="nrz-results" aria-live="polite">${renderNrzResult(state.nrzResult)}</div>`;
+}
+
+async function loadNrzCatalog() {
+  if (!state.nrzMaps) state.nrzMaps = (await guildApi('nrz-maps')).maps;
+  if (state.view !== 'nrz') return;
+  const list = $('#nrz-map-options');
+  if (list) list.innerHTML = state.nrzMaps.map(map => `<option value="${escape(map.name)}"></option>`).join('');
+  if ($('#nrz-map-count')) $('#nrz-map-count').textContent = `${state.nrzMaps.length} harita`;
+}
+
+async function searchNrz(name) {
+  const guildId = state.guild?.id;
+  if ($('#nrz-results')) $('#nrz-results').innerHTML = '<div class="loading">NRZ dereceleri yükleniyor…</div>';
+  const result = await guildApi(`nrz-map?name=${encodeURIComponent(name)}`);
+  if (state.guild?.id !== guildId || state.view !== 'nrz') return;
+  state.nrzResult = result;
+  if ($('#nrz-results')) $('#nrz-results').innerHTML = renderNrzResult(result);
+}
 function updateBoostedProgress() {
   const progress = $('.boosted-progress');
   if (!progress) return;
@@ -421,6 +464,7 @@ function renderSettingsBase() {
   const s = state.guild.settings, perms = state.guild.bot.permissions;
   const commands = [['/panel-giris', 'Tek kullanımlık güvenli panel giriş kodu üret.'], ['/hatırlat · /hatırlatıcılar', 'Kişisel hatırlatma oluştur, listele veya iptal et.'], ['/healthcare', 'Mola hatırlatmalarına katıl veya kapat.'], ['/bilet-kapat', 'Destek biletini kapat.'], ['/uyar · /savunma-yanıt', 'Üyeyi uyar veya özel savunmaya yanıt ver.'], ['/yardim', 'Tüm komutları ve kullanımını göster.'], ['/clear · /temizle', 'Adet verilmezse tüm kanalı, verilirse son 1–100 mesajı temizle.'], ['/play · /pause · /skip · /stop', 'Müzik istasyonunu yönet.']];
   const active = [['Otomatik rol',s.autoRoleEnabled],['Emoji ile rol',state.guild.reactionRoleCount > 0],['Ayrılma mesajı',s.leaveEnabled],['Otomatik cevap',s.responderEnabled],['Müzik',s.musicEnabled],['Spam',s.antiSpamEnabled],['Oltalama',s.antiPhishingEnabled],['Bilet',s.ticketEnabled],['Savunma',s.defenseEnabled],['Sağlık',s.healthEnabled],['Boosted Event',s.boostedEventEnabled],['SSS',s.faqEnabled]];
+  commands.push(['!map · /map', 'NRZ yarış haritasının normal ve Time Attack ilk 10 süresini ve tuning verisini göster.']);
   commands.push(['/çalış · /maden', 'Sanal altın ve XP kazan. Çalışma 30, maden 15 dakikada bir kullanılabilir.'], ['/mağaza · /satın-al · /profil', 'Ekipman satın al ve karakterini görüntüle. En güçlü kılıç ve zırh otomatik kuşanılır.'], ['/savaş · /sıralama', '5 dakikada bir zarla canavar savaşı; sunucu sıralaması XP, galibiyet ve altına göre hesaplanır.']);
   const guildOptions = state.guilds.map(guild => `<option value="${escape(guild.id)}" ${guild.id === state.guild.id ? 'selected' : ''}>${escape(guild.name)}</option>`).join('');
   return `<div class="grid-2 settings-grid">
@@ -511,7 +555,7 @@ function render() {
   $('#view-title').textContent = titles[state.view];
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  const page = ({ overview: renderOverview, rpg: renderRpg, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
+  const page = ({ overview: renderOverview, rpg: renderRpg, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, nrz: renderNrz, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
   $('#view-content').innerHTML = page.replaceAll('/sağlık-asistanı', '/healthcare');
   applyOverviewHeight();
   if (['blacklist', 'tickets', 'tools', 'faq', 'reactionRoles', 'access', 'settings'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
@@ -520,6 +564,7 @@ function render() {
   if ($('#leave-preview')) updateLeavePreview();
   if (state.view === 'crew') void loadCrew().catch(error => notice(error.message, true));
   if (state.view === 'boosted') updateBoostedProgress();
+  if (state.view === 'nrz') void loadNrzCatalog().catch(error => notice(error.message, true));
   if (state.view === 'rpg') void loadRpg();
   if (state.view === 'reactionRoles') updateReactionRolePreview();
 }
@@ -671,6 +716,7 @@ document.addEventListener('click', async event => {
     if (button.hasAttribute('data-crew-sort')) { const key = button.dataset.crewSort; state.crewSort = { key, direction: state.crewSort.key === key ? (state.crewSort.direction === 'desc' ? 'asc' : 'desc') : (key === 'name' ? 'asc' : 'desc') }; $('#crew-content').innerHTML = crewBody(state.guild.crew); return; }
     if (button.id === 'refresh-crew') { button.disabled = true; await loadCrew(true); notice('Ekip REP ve profil bilgileri güncellendi.'); }
     if (button.id === 'refresh-boosted-event') { button.disabled = true; state.guild.boostedEvent = await guildApi('boosted-event', { method: 'POST', body: '{}' }); render(); notice(state.guild.boostedEvent.error ? state.guild.boostedEvent.error : 'Boosted Event kontrol edildi ve kanala bildirildi.', Boolean(state.guild.boostedEvent.error)); }
+    if (button.dataset.nrzMap) { $('#nrz-map-name').value = button.dataset.nrzMap; await searchNrz(button.dataset.nrzMap); return; }
     if (button.id === 'more-logs') await loadLogs(true);
     if (button.id === 'publish-ticket') { await guildApi('tickets', { method: 'POST', body: '{}' }); notice('Destek düğmesi seçilen kanala yayımlandı.'); }
     if (button.dataset.editFaq) {
@@ -701,7 +747,7 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('pointerup', event => saveOverviewHeight(event.composedPath().find(node => node?.matches?.('[data-dashboard-size]'))));
 document.addEventListener('input', event => {
-  if (event.target.closest('form') && event.target.type !== 'search' && !event.target.closest('#play-form,#volume-form,#code-login-form')) state.dirty = true;
+  if (event.target.closest('form') && event.target.type !== 'search' && !event.target.closest('#play-form,#volume-form,#code-login-form,#nrz-map-form')) state.dirty = true;
   if (event.target.id === 'leave-message') updateLeavePreview();
   if (event.target.id === 'volume') $('#volume-value').textContent = `${event.target.value}%`;
   if (event.target.id === 'faq-question' || event.target.id === 'faq-answer') { const preview = $('#faq-preview'); if (preview) preview.innerHTML = `<strong>${escape($('#faq-question').value || 'Soru')}</strong><p>${escape($('#faq-answer').value || 'Cevap')}</p>`; }
@@ -728,6 +774,7 @@ document.addEventListener('submit', async event => {
   notice('');
   try {
     if (form.id === 'code-login-form') { const code = $('#login-code').value.trim(); $('#login-error').textContent = ''; button.textContent = 'Kod doğrulanıyor…'; await api('/auth/code', { method: 'POST', body: JSON.stringify({ code }) }); $('#login-code').value = ''; await boot(); return; }
+    if (form.id === 'nrz-map-form') { await searchNrz($('#nrz-map-name').value.trim()); return; }
     if (form.id === 'community-form') await saveSettings({ autoRoleEnabled: $('#auto-role-enabled').checked, autoRoleIds: selectedRoles('auto-role-ids'), leaveEnabled: $('#leave-enabled').checked, leaveChannelId: $('#leave-channel').value || null, leaveMessage: $('#leave-message').value });
     if (form.id === 'blacklist-settings') await saveSettings({ blacklistOnLeave: $('#blacklist-on-leave').checked });
     if (form.id === 'blacklist-add') { await guildApi('blacklist', { method: 'POST', body: JSON.stringify({ userId: $('#blacklist-user').value.trim(), reason: $('#blacklist-reason').value.trim() }) }); form.reset(); state.dirty = false; await loadFeatureRecords(); notice('Kullanıcı kara listeye eklendi.'); }

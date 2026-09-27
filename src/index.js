@@ -18,6 +18,8 @@ import { createBoostedEventMonitor } from './boosted-events.js';
 import { installReactionRoles } from './reaction-roles.js';
 import { createRpg } from './rpg.js';
 import { recordDashboardActivity } from './dashboard-activity.js';
+import { createNrzLeaderboards } from './nrz-leaderboards.js';
+import { createNrzMapCommand } from './nrz-command.js';
 
 let config;
 try {
@@ -36,6 +38,8 @@ const client = new Client({
 const health = createHealthServer(() => client.isReady());
 mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
 const store = createStore(join(config.dataDir, 'pit-stop.sqlite'));
+const nrz = createNrzLeaderboards();
+const mapCommand = createNrzMapCommand(nrz, { logger: log });
 installAuditIdentity(client, store);
 const music = createMusic(client, store, config, { logger: log });
 const features = createFeatures(client, store, config, { logger: log });
@@ -43,10 +47,10 @@ const crew = createCrewTracker(store, config, { logger: log });
 const boostedEvents = createBoostedEventMonitor(client, store, config, { logger: log });
 features.install();
 const rpg = createRpg(store, { client, logger: log });
-const allCommands = [...commands, ...music.commands, ...features.commands, ...rpg.commands];
+const allCommands = [...commands, mapCommand, ...music.commands, ...features.commands, ...rpg.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
 const removeReactionRoles = installReactionRoles(client, store, { logger: log });
-const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, rpg, config, logger: log });
+const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, rpg, nrz, config, logger: log });
 let stopping = false;
 let disconnectedAt;
 let hasBeenReady = false;
@@ -112,6 +116,7 @@ client.on(Events.MessageCreate, message => {
   if (!message.guildId || message.author?.bot) return;
   try { recordDashboardActivity(store, { guildId: message.guildId, channelId: message.channelId, kind: 'message' }); }
   catch (error) { log('error', 'dashboard_message_activity_failed', safeError(error)); }
+  void mapCommand.handleMessage(message).catch(error => log('error', 'nrz_map_failed', safeError(error)));
 });
 client.on(Events.InteractionCreate, createInteractionHandler(allCommands, { logger: log, store }));
 client.on(Events.InteractionCreate, interaction => {

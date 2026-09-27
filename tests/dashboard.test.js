@@ -84,6 +84,10 @@ async function setup(t, configOverrides = {}) {
     getStatus: guildId => ({ enabled: true, crewId: 1636, guildId, members: [{ name: 'Pilot', crewRep: 100 }] }),
     refresh: async (...args) => { calls.crew.push(args); return { enabled: true, crewId: 1636, members: [{ name: 'Pilot', crewRep: 125 }] }; },
   };
+  const nrz = {
+    catalog: async () => [{ id: 239, name: 'AGATHE STREET', timeAttackId: 5239 }],
+    getMap: async name => ({ map: { id: 239, name, timeAttackId: 5239 }, normal: [], timeAttack: [] }),
+  };
   const config = {
     publicUrl: PUBLIC_ORIGIN,
     clientId: BOT,
@@ -113,7 +117,7 @@ async function setup(t, configOverrides = {}) {
     }
     throw new Error(`Unexpected mocked Discord request: ${path}`);
   };
-  const server = createDashboard({ client, store, music, features, crew, config, fetcher, logger: (...args) => calls.diagnostics.push(args) });
+  const server = createDashboard({ client, store, music, features, crew, nrz, config, fetcher, logger: (...args) => calls.diagnostics.push(args) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -152,8 +156,23 @@ async function setup(t, configOverrides = {}) {
     headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
-  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music, features, crew, client, fetcher };
+  return { request, beginLogin, login, mutation, store, calls, guild, member, role, channel, config, music, features, crew, nrz, client, fetcher };
 }
+
+test('NRZ map endpoints require guild access and validate the query', async t => {
+  const fixture = await setup(t);
+  const base = `/api/guilds/${GUILD}`;
+  assert.equal((await fixture.request(`${base}/nrz-maps`)).status, 401);
+  const session = await fixture.login();
+  const headers = { Cookie: session.cookie };
+  const maps = await fixture.request(`${base}/nrz-maps`, { headers });
+  assert.equal(maps.status, 200);
+  assert.equal((await maps.json()).maps[0].name, 'AGATHE STREET');
+  assert.equal((await fixture.request(`${base}/nrz-map`, { headers })).status, 400);
+  const result = await fixture.request(`${base}/nrz-map?name=Agathe%20Street`, { headers });
+  assert.equal((await result.json()).map.timeAttackId, 5239);
+  assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/nrz-maps`, { headers })).status, 403);
+});
 
 function noSecrets(value) {
   for (const secret of SECRETS) assert.equal(value.includes(secret), false, 'A private credential was exposed');
