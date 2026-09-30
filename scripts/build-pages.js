@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const panelUrl = process.env.PUBLIC_PANEL_URL?.trim().replace(/\/$/, '') || '';
@@ -9,6 +9,7 @@ if (panelUrl) {
   }
 }
 const output = resolve('site-dist');
+await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 await cp('public', output, { recursive: true });
 let html = await readFile(`${output}/index.html`, 'utf8');

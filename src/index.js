@@ -16,7 +16,6 @@ import { installAuditIdentity } from './audit.js';
 import { createCrewTracker } from './crew.js';
 import { createBoostedEventMonitor } from './boosted-events.js';
 import { installReactionRoles } from './reaction-roles.js';
-import { createRpg } from './rpg.js';
 import { recordDashboardActivity } from './dashboard-activity.js';
 import { createNrzLeaderboards } from './nrz-leaderboards.js';
 import { createNrzMapCommand } from './nrz-command.js';
@@ -46,11 +45,10 @@ const features = createFeatures(client, store, config, { logger: log });
 const crew = createCrewTracker(store, config, { logger: log });
 const boostedEvents = createBoostedEventMonitor(client, store, config, { logger: log });
 features.install();
-const rpg = createRpg(store, { client, logger: log });
-const allCommands = [...commands, mapCommand, ...music.commands, ...features.commands, ...rpg.commands];
+const allCommands = [...commands, mapCommand, ...music.commands, ...features.commands];
 const removeCommunityHandlers = installCommunityHandlers(client, store, { logger: log });
 const removeReactionRoles = installReactionRoles(client, store, { logger: log });
-const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, rpg, nrz, config, logger: log });
+const dashboard = createDashboard({ client, store, music, features, crew, boostedEvents, nrz, config, logger: log });
 let stopping = false;
 let disconnectedAt;
 let hasBeenReady = false;
@@ -60,7 +58,6 @@ async function shutdown(code, reason) {
   stopping = true;
   log('info', 'shutdown', { reason });
   clearInterval(watchdog);
-  clearInterval(roadsideTimer);
   const deadline = setTimeout(() => process.exit(code), 5000);
   deadline.unref();
   removeCommunityHandlers();
@@ -91,17 +88,6 @@ const watchdog = setInterval(() => {
   }
 }, 15_000);
 watchdog.unref();
-function tickGarage() {
-  if (!client.isReady()) return;
-  for (const guild of client.guilds.cache.values()) {
-    try { rpg.auctions(guild.id); }
-    catch (error) { log('error', 'rpg_auction_timer_failed', { guildId: guild.id, ...safeError(error) }); }
-  }
-  void rpg.dispatchRoadsideCalls().catch(error => log('error', 'rpg_roadside_timer_failed', safeError(error)));
-}
-const roadsideTimer = setInterval(tickGarage, 60_000);
-roadsideTimer.unref();
-
 client.once(Events.ClientReady, readyClient => {
   hasBeenReady = true;
   log('info', 'ready', { bot: readyClient.user.tag, guilds: readyClient.guilds.cache.size });
@@ -109,7 +95,6 @@ client.once(Events.ClientReady, readyClient => {
   void features.initialize().catch(error => log('error', 'features_initialize_failed', safeError(error)));
   void crew.initialize().catch(error => log('error', 'crew_initialize_failed', safeError(error)));
   void boostedEvents.initialize().catch(error => log('error', 'boosted_event_initialize_failed', safeError(error)));
-  tickGarage();
 });
 client.on(Events.Raw, payload => music.handleRaw(payload));
 client.on(Events.MessageCreate, message => {
@@ -124,7 +109,6 @@ client.on(Events.InteractionCreate, interaction => {
     try { recordDashboardActivity(store, { guildId: interaction.guildId, channelId: interaction.channelId, kind: 'command' }); }
     catch (error) { log('error', 'dashboard_command_activity_failed', safeError(error)); }
   }
-  void rpg.handleInteraction(interaction).catch(error => log('error', 'rpg_interaction_failed', safeError(error)));
 });
 client.on(Events.Error, error => log('error', 'discord_error', safeError(error)));
 client.on(Events.ShardError, error => log('error', 'gateway_error', safeError(error)));

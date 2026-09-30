@@ -175,58 +175,18 @@ test('NRZ map endpoints require guild access and validate the query', async t =>
   assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/nrz-maps`, { headers })).status, 403);
 });
 
+test('removed game endpoints, assets and settings are unavailable after authentication', async t => {
+  const fixture = await setup(t), session = await fixture.login();
+  const headers = { Cookie: session.cookie };
+  for (const path of [`/api/guilds/${GUILD}/rpg`, `/api/guilds/${GUILD}/rpg/shop/buy`, '/rpg-view.js', '/rpg-garage-interactive.js', '/assets/rpg/demir-kilic.webp']) {
+    assert.equal((await fixture.request(path, { headers })).status, 404);
+  }
+  assert.equal((await fixture.mutation(`/api/guilds/${GUILD}/settings`, session, { rpgAnnouncementChannelId: CHANNEL })).status, 400);
+});
+
 function noSecrets(value) {
   for (const secret of SECRETS) assert.equal(value.includes(secret), false, 'A private credential was exposed');
 }
-
-test('RPG dashboard requires guild access and returns scoped ranking, catalog and actual commands', async t => {
-  const fixture = await setup(t);
-  const path = `/api/guilds/${GUILD}/rpg`;
-  assert.equal((await fixture.request(path)).status, 401);
-  const session = await fixture.login();
-  const headers = { Cookie: session.cookie };
-  const player = { name: 'Pilot', xp: 40, coins: 1000, wins: 1, losses: 0, sword: 'demir-kilic', armor: null, receipts: ['private'], cooldowns: { work: 123 }, garage: { xp: 250 } };
-  fixture.store.putRecord(GUILD, 'rpg_player', USER, player);
-  fixture.store.putRecord(GUILD, 'rpg_player', ROLE, { ...player, name: 'Champion', xp: 400 });
-  fixture.store.putRecord(OTHER_GUILD, 'rpg_player', USER, { ...player, name: 'Other server', xp: 99999 });
-  const response = await fixture.request(path, { headers });
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.deepEqual(data.leaderboard.map(p => p.name), ['Champion', 'Pilot']);
-  assert.equal(data.leaderboard[0].level, 3);
-  assert.equal(data.leaderboard[0].sword, 'Demir kılıç');
-  assert.equal(data.items.length, 56);
-  assert.equal(data.monsters.length, 6);
-  assert.equal(data.commands.length, 48);
-  assert.equal(data.classes.length, 3);
-  assert.equal(data.recipes.length, 9);
-  assert.equal(data.world.timezone, 'Europe/Istanbul');
-  assert.equal(data.garage.level, 2);
-  assert.ok(data.commands.some(c => c.usage === '/rpg-rehber'));
-  assert.ok(!JSON.stringify(data).includes('receipts'));
-  assert.ok(!JSON.stringify(data).includes('cooldowns'));
-  const garageResponse = await fixture.request(`${path}/garage/action`, {
-    method: 'POST',
-    headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId: 'garage_buy_test', action: 'garageBuy', upgradeId: 'krom-set' }),
-  });
-  assert.equal(garageResponse.status, 200);
-  assert.ok((await garageResponse.json()).state.garage.upgrades.find(item => item.id === 'krom-set').readyAt);
-  assert.equal((await fixture.request(`/api/guilds/${OTHER_GUILD}/rpg`, { headers })).status, 403);
-});
-
-test('RPG announcement channel changes use protected settings and validate guild ownership', async t => {
-  const fixture = await setup(t), session = await fixture.login();
-  const path = `/api/guilds/${GUILD}/settings`;
-  assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: CHANNEL })).status, 200);
-  assert.equal(fixture.store.getSettings(GUILD).rpgAnnouncementChannelId, CHANNEL);
-  assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: OTHER_GUILD })).status, 400);
-  assert.equal(fixture.store.getSettings(GUILD).rpgAnnouncementChannelId, CHANNEL);
-  assert.equal((await fixture.mutation(path, session, { rpgAnnouncementChannelId: null }, { 'X-CSRF-Token': 'wrong' })).status, 403);
-  assert.equal((await fixture.request('/rpg-view.js')).status, 200);
-  assert.equal((await fixture.request('/rpg-garage-scene.js')).status, 200);
-  assert.equal((await fixture.request('/rpg-garage-interactive.js')).status, 200);
-});
 
 test('OAuth HTTP flow issues protected state/session cookies and attempts silent reuse first', async (t) => {
   const fixture = await setup(t);
@@ -544,7 +504,7 @@ test('public assets and API responses expose no configured or OAuth credentials'
     const response = await fixture.request(path);
     assert.equal(response.status, 200);
     noSecrets(await response.text());
-    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('cache-control'), ['/', '/api/status'].includes(path) ? 'no-store' : 'no-cache');
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(response.headers.get('x-frame-options'), 'DENY');
     assert.match(response.headers.get('content-security-policy'), /script-src 'self'/u);
@@ -557,18 +517,6 @@ test('public assets and API responses expose no configured or OAuth credentials'
   }
   assert.equal((await fixture.request('/.env', { headers: { Cookie: session.cookie } })).status, 404);
   assert.equal((await fixture.request('/src/config.js', { headers: { Cookie: session.cookie } })).status, 404);
-});
-
-test('RPG item icons are public immutable assets and do not consume the API rate limit', async (t) => {
-  const fixture = await setup(t), icon = '/assets/rpg/saf-isigin-muhafizi-staffi.webp';
-  for (let index = 0; index < 35; index++) {
-    const response = await fixture.request(icon, { method: 'HEAD' });
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get('content-type'), 'image/webp');
-    assert.match(response.headers.get('cache-control'), /immutable/u);
-  }
-  assert.equal((await fixture.request('/api/me')).status, 401);
-  assert.equal((await fixture.request('/assets/rpg/not-a-catalog-item.webp')).status, 401);
 });
 
 test('login video streams public byte ranges, suffixes and HEAD without an API session', async (t) => {

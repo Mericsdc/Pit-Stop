@@ -31,7 +31,6 @@ const DEFAULT_SETTINGS = Object.freeze({
   musicVolume: 50,
   djRoleId: null,
   logChannelId: null,
-  rpgAnnouncementChannelId: null,
   boostedEventEnabled: true,
   boostedEventChannelId: null,
   faqEnabled: true,
@@ -44,7 +43,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   panelLoginBackgroundUrl: null,
 });
 const BOOLEAN_KEYS = new Set(['leaveEnabled', 'autoRoleEnabled', 'responderEnabled', 'musicEnabled', 'blacklistOnLeave', 'antiSpamEnabled', 'antiPhishingEnabled', 'ticketEnabled', 'defenseEnabled', 'healthEnabled', 'musicRestricted', 'boostedEventEnabled', 'faqEnabled']);
-const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'rpgAnnouncementChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
+const ID_KEYS = new Set(['leaveChannelId', 'autoRoleId', 'djRoleId', 'logChannelId', 'ticketChannelId', 'ticketCategoryId', 'supportRoleId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']);
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function object(value, label) {
@@ -309,14 +308,6 @@ export function createStore(path) {
         database.exec('COMMIT');
         return JSON.parse(json);
       } catch (error) { database.exec('ROLLBACK'); throw error; }
-    },
-    rpgLeaderboard(guildId) {
-      snowflake(guildId);
-      return database.prepare(`SELECT id, data_json FROM feature_records WHERE guild_id=? AND kind='rpg_player'
-        ORDER BY CAST(json_extract(data_json, '$.xp') AS INTEGER) DESC,
-        CAST(json_extract(data_json, '$.wins') AS INTEGER) DESC,
-        CAST(json_extract(data_json, '$.coins') AS INTEGER) DESC, id ASC LIMIT 10`).all(guildId)
-        .map(row => ({ ...JSON.parse(row.data_json), id: row.id }));
     },
     putRecord(guildId, kind, id, data) {
       snowflake(guildId); logType(kind); text(id, 'Kayıt kimliği', 100); object(data, 'Kayıt');

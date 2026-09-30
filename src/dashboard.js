@@ -6,9 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { safeError } from './logger.js';
-import { createRpg, RPG_ITEMS } from './rpg.js';
-import { RpgError } from './rpg-system.js';
 import { dashboardActivitySummary } from './dashboard-activity.js';
+import { serveStaticAsset } from './static-assets.js';
 
 const random = () => randomBytes(32).toString('base64url');
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -19,10 +18,6 @@ const staticFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/login-background.js', ['login-background.js', 'text/javascript; charset=utf-8']],
-  ['/rpg-view.js', ['rpg-view.js', 'text/javascript; charset=utf-8']],
-  ['/rpg-vehicles-view.js', ['rpg-vehicles-view.js', 'text/javascript; charset=utf-8']],
-  ['/rpg-garage-scene.js', ['rpg-garage-scene.js', 'text/javascript; charset=utf-8']],
-  ['/rpg-garage-interactive.js', ['rpg-garage-interactive.js', 'text/javascript; charset=utf-8']],
   ['/site-config.js', ['site-config.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/layout.css', ['layout.css', 'text/css; charset=utf-8']],
@@ -31,12 +26,6 @@ const staticFiles = new Map([
   ['/assets/banner.webp', ['assets/banner.webp', 'image/webp']],
   ['/assets/login-tuner-poster.jpg', ['assets/login-tuner-poster.jpg', 'image/jpeg']],
 ]);
-for (const item of RPG_ITEMS) {
-  if (item.icon?.startsWith('/assets/rpg/') && /^[a-z0-9-]+\.webp$/u.test(item.icon.slice('/assets/rpg/'.length))) {
-    staticFiles.set(item.icon, [item.icon.slice(1), 'image/webp', true]);
-  }
-}
-
 export function constantEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const left = Buffer.from(a), right = Buffer.from(b);
@@ -66,7 +55,7 @@ async function readJson(request) {
 
 export async function validateGuildSettings(guild, member, patch, existing = {}) {
   if (!patch || Array.isArray(patch) || typeof patch !== 'object') throw httpError(400, 'Ayarlar bir nesne olmalı.');
-  for (const key of ['leaveChannelId', 'logChannelId', 'rpgAnnouncementChannelId', 'ticketChannelId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']) {
+  for (const key of ['leaveChannelId', 'logChannelId', 'ticketChannelId', 'defenseChannelId', 'boostedEventChannelId', 'faqChannelId']) {
     if (!patch[key]) continue;
     const channel = await guild.channels.fetch(patch[key]);
     if (key === 'defenseChannelId' && channel?.type !== ChannelType.GuildText) throw httpError(400, 'Özel savunma thread’leri için normal bir metin kanalı seçin.');
@@ -95,9 +84,8 @@ export async function validateGuildSettings(guild, member, patch, existing = {})
   if (next.defenseEnabled && (!next.defenseChannelId || !next.supportRoleId)) throw httpError(400, 'Savunma sistemi için ana kanal ve destek rolü seçin.');
 }
 
-export function createDashboard({ client, store, music, features, crew, boostedEvents, nrz, rpg: suppliedRpg, config, logger = () => {}, fetcher = fetch }) {
+export function createDashboard({ client, store, music, features, crew, boostedEvents, nrz, config, logger = () => {}, fetcher = fetch }) {
   const sessions = new Map(), pendingStates = new Map(), limits = new Map(), weatherCache = new Map();
-  const rpg = suppliedRpg || createRpg(store, { client, logger });
   const base = new URL(config.publicUrl);
   const trustedOrigins = new Set(config.panelOrigins?.length ? config.panelOrigins : [base.origin]);
   const secure = base.protocol === 'https:';
@@ -250,10 +238,8 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         return;
       }
       if (staticFiles.has(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
-        const [file, type, immutable] = staticFiles.get(url.pathname);
-        const body = await readFile(fileURLToPath(new URL(`../public/${file}`, import.meta.url)));
-        response.writeHead(200, { 'Content-Type': type, 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-store' });
-        response.end(request.method === 'HEAD' ? undefined : body);
+        const [file, type] = staticFiles.get(url.pathname);
+        await serveStaticAsset(request, response, fileURLToPath(new URL(`../public/${file}`, import.meta.url)), type);
         return;
       }
       if (url.pathname === '/api/status' && request.method === 'GET') {
@@ -388,58 +374,7 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         json(response, 200, guilds.filter(guild => client.guilds.cache.has(guild.id) && (guild.owner || (BigInt(guild.permissions) & (manageGuild | PermissionFlagsBits.Administrator)) !== 0n)).map(guild => ({ id: guild.id, name: guild.name, icon: guild.icon })));
         return;
       }
-      const rpgMatch = /^\/api\/guilds\/(\d{17,20})\/rpg(?:\/([a-z-]+))?(?:\/([a-z-]+))?$/.exec(url.pathname);
-      if (rpgMatch) {
-        const [, guildId, area, operation] = rpgMatch;
-        const { member } = await authorizedGuild(guildId, session);
-        const user = member.user || session.user;
-        const avatar = typeof member.displayAvatarURL === 'function' ? member.displayAvatarURL({ extension: 'webp', size: 128 }) : null;
-        if (!area && request.method === 'GET') { json(response, 200, rpg.webState(guildId, user, { avatar })); return; }
-        if (request.method !== 'POST') throw httpError(405, 'Bu RPG işlemi desteklenmiyor.');
-        const body = await readJson(request);
-        const requestId = typeof body.requestId === 'string' && /^[A-Za-z0-9_-]{8,100}$/u.test(body.requestId) ? body.requestId : random();
-        let message;
-        try {
-          if (area === 'activity' && operation === 'start') {
-            const activity = rpg.startActivity(guildId, user, body.type, requestId);
-            message = activity.type === 'mine' ? 'Madencilik başladı.' : 'Garaj vardiyası başladı.';
-          } else if (area === 'activity' && operation === 'claim') message = rpg.claimActivity(guildId, user, requestId).result;
-          else if (area === 'shop' && operation === 'buy') message = rpg.act(guildId, user, 'buy', body.itemId, requestId);
-          else if (area === 'shop' && operation === 'sell') message = rpg.sell(guildId, user, body.itemId, requestId);
-          else if (area === 'equipment' && operation === 'equip') message = rpg.equip(guildId, user, body.itemId, requestId);
-          else if (area === 'potion' && operation === 'use') message = rpg.act(guildId, user, 'potion', body.itemId, requestId);
-          else if (area === 'quest' && operation === 'claim') message = rpg.act(guildId, user, 'quest', body.questId, requestId);
-          else if (area === 'class' && operation === 'select') message = rpg.act(guildId, user, 'class', body.classId, requestId);
-          else if (area === 'battle' && operation === 'action') message = rpg.act(guildId, user, 'battle', { monster: body.monsterId, ...(body.skill ? { skill: body.skill } : {}) }, requestId);
-          else if (area === 'dungeon' && operation === 'start') {
-            if (body.difficulty != null && !['kolay', 'orta', 'zor'].includes(body.difficulty)) throw new TypeError('Geçersiz zindan zorluğu.');
-            message = rpg.act(guildId, user, 'dungeon', body.difficulty || 'orta', requestId);
-          }
-          else if (area === 'dungeon' && operation === 'action') {
-            const fight = rpg.profile(guildId, user).fight;
-            if (!fight) throw new RpgError('Devam eden bir zindan savaşın yok.');
-            message = rpg.act(guildId, user, 'dungeonTurn', { id: fight.id, turn: fight.turn, move: body.move }, requestId);
-          } else if (area === 'garage' && operation === 'action') {
-            const allowed = new Set(['garageBuy', 'garageExpedite', 'repairUpgrade', 'hireEmployee', 'employeeBonus', 'employeeLeave', 'employeeCollect', 'autoWork', 'repairEmployee', 'roadside']);
-            if (!allowed.has(body.action)) throw new RpgError('Geçersiz garaj işlemi.');
-            message = rpg.act(guildId, user, body.action, body.upgradeId || null, requestId);
-          } else if (area === 'vehicles' && operation === 'action') {
-            if (!['partBuy', 'boxBuy', 'junkyardSearch', 'jobRepair', 'carBuy', 'carRepair', 'carSalvage', 'modApply'].includes(body.action)) throw new RpgError('Geçersiz araç işlemi.');
-            message = rpg.act(guildId, user, body.action, body.action === 'modApply' ? { carId: body.carId, modId: body.modId } : body.choiceId || null, requestId);
-          } else if (area === 'vehicles' && operation === 'list') message = rpg.listVehicle(guildId, user, body.carId, requestId);
-          else if (area === 'vehicles' && operation === 'bid') message = rpg.bidVehicle(guildId, user, body.auctionId, body.amount, requestId);
-          else if (area === 'craft' && operation === 'create') message = rpg.act(guildId, user, 'craft', body.recipeId, requestId);
-          else if (area === 'daily' && operation === 'claim') message = rpg.act(guildId, user, 'daily', null, requestId);
-          else throw httpError(404, 'RPG işlemi bulunamadı.');
-        } catch (error) {
-          if (error instanceof RpgError) throw httpError(409, error.message);
-          throw error;
-        }
-        store.addLog(guildId, { type: 'rpg.web_action', actorId: session.user.id, message: `${session.user.name} web RPG işlemi yaptı.`, details: { actorName: session.user.name, area, operation } });
-        json(response, 200, { ok: true, message, state: rpg.webState(guildId, user, { avatar }) });
-        return;
-      }
-      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles|rpg|nrz-maps|nrz-map))?$/.exec(url.pathname);
+      const match = /^\/api\/guilds\/(\d{17,20})(?:\/(settings|logs|music|blacklist|reminders|tickets|cases|protection|access|panel-access|crew|faqs|boosted-event|reaction-roles|nrz-maps|nrz-map))?$/.exec(url.pathname);
       if (!match) throw httpError(404, 'Sayfa bulunamadı.');
       const [, guildId, resource] = match;
       const { guild, member } = await authorizedGuild(guildId, session);
@@ -449,7 +384,6 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         if (!name || name.length > 100) throw httpError(400, 'Harita adını 1–100 karakter arasında yazın.');
         json(response, 200, await nrz.getMap(name)); return;
       }
-      if (resource === 'rpg' && request.method === 'GET') { json(response, 200, rpg.webState(guildId, member.user || session.user, { avatar: typeof member.displayAvatarURL === 'function' ? member.displayAvatarURL({ extension: 'webp', size: 128 }) : null })); return; }
       if (!resource && request.method === 'GET') {
         await Promise.all([guild.channels.fetch(), guild.roles.fetch(), guild.emojis?.fetch?.() || Promise.resolve()]);
         const me = guild.members.me;

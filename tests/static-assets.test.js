@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { serveStaticAsset } from '../src/static-assets.js';
+
+test('static assets compress, revalidate and invalidate cached bytes after a file change', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'pit-stop-assets-'));
+  const path = join(directory, 'app.js');
+  let content = 'console.log("first");\n'.repeat(200);
+  await writeFile(path, content);
+  const server = createServer((request, response) => {
+    void serveStaticAsset(request, response, path, 'text/javascript; charset=utf-8').catch(() => { response.writeHead(500); response.end(); });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => { const closed = once(server, 'close'); server.close(); server.closeAllConnections(); await closed; await rm(directory, { recursive: true }); });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const first = await fetch(url, { headers: { 'Accept-Encoding': 'gzip' } });
+  assert.equal(first.headers.get('content-encoding'), 'gzip');
+  assert.equal(first.headers.get('vary'), 'Accept-Encoding');
+  assert.equal(await first.text(), content);
+  const etag = first.headers.get('etag');
+  assert.ok(Number(first.headers.get('content-length')) < content.length);
+  const unchanged = await fetch(url, { headers: { 'If-None-Match': etag } });
+  assert.equal(unchanged.status, 304);
+  assert.equal(await unchanged.text(), '');
+  content += '// changed\n';
+  await writeFile(path, content);
+  const changed = await fetch(url, { headers: { 'If-None-Match': etag, 'Accept-Encoding': 'gzip;q=0' } });
+  assert.equal(changed.status, 200);
+  assert.notEqual(changed.headers.get('etag'), etag);
+  assert.equal(changed.headers.get('content-encoding'), null);
+  assert.equal(await changed.text(), content);
+  const head = await fetch(url, { method: 'HEAD' });
+  assert.equal(await head.text(), '');
+});
