@@ -207,10 +207,10 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     if (secure) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(request.url, base);
-      if (url.pathname === '/assets/login-tuner.mp4' && ['GET', 'HEAD'].includes(request.method)) {
-        const path = fileURLToPath(new URL('../public/assets/login-tuner.mp4', import.meta.url));
+      if (url.pathname === '/assets/login-tuner-native.webm' && ['GET', 'HEAD'].includes(request.method)) {
+        const path = fileURLToPath(new URL('../public/assets/login-tuner-native.webm', import.meta.url));
         const { size } = await stat(path);
-        const headers = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600' };
+        const headers = { 'Content-Type': 'video/webm', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600' };
         let start = 0, end = size - 1, status = 200;
         // HEAD describes the complete resource; Range only applies to GET.
         if (request.method === 'GET' && request.headers.range) {

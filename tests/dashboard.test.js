@@ -521,13 +521,13 @@ test('public assets and API responses expose no configured or OAuth credentials'
 
 test('login video streams public byte ranges, suffixes and HEAD without an API session', async (t) => {
   const fixture = await setup(t);
-  const path = '/assets/login-tuner.mp4';
-  const file = new URL('../public/assets/login-tuner.mp4', import.meta.url);
+  const path = '/assets/login-tuner-native.webm';
+  const file = new URL('../public/assets/login-tuner-native.webm', import.meta.url);
   const { size } = await stat(file);
   const content = await readFile(file);
   const head = await fixture.request(path, { method: 'HEAD', headers: { Range: 'bytes=0-15' } });
   assert.equal(head.status, 200);
-  assert.equal(head.headers.get('content-type'), 'video/mp4');
+  assert.equal(head.headers.get('content-type'), 'video/webm');
   assert.equal(head.headers.get('accept-ranges'), 'bytes');
   assert.equal(Number(head.headers.get('content-length')), size);
   assert.equal((await head.arrayBuffer()).byteLength, 0);

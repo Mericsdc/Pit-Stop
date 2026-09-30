@@ -24,7 +24,7 @@ for (const media of document.querySelectorAll('img, video')) media.draggable = f
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const loginBackground = createLoginBackground($('#login-background-video'), $('#login-background-image'), new URL('./assets/login-tuner.mp4?v=2', import.meta.url).href);
+const loginBackground = createLoginBackground($('#login-background-video'), $('#login-background-image'), new URL('./assets/login-tuner-native.webm', import.meta.url).href);
 document.addEventListener('visibilitychange', () => loginBackground.setVisible(document.body.classList.contains('logged-out') && !document.hidden));
 for (const event of ['pointerdown', 'keydown']) document.addEventListener(event, () => loginBackground.play(), { passive: true });
 const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null };

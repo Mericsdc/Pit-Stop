@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLoginBackground } from '../public/login-background.js';
 
-const defaultVideo = 'https://pit-stop.example/assets/login-tuner.mp4';
+const defaultVideo = 'https://pit-stop.example/assets/login-tuner-native.webm';
 function setup(reject = false) {
   const calls = { play: 0, pause: 0, sources: 0 };
   let source = defaultVideo;
