@@ -55,6 +55,9 @@ for file in "${files[@]}"; do
   install -o pitstop -g pitstop -m "$mode" "$source_dir/$file" "$target_dir/$file"
 done
 for file in "${removed[@]}"; do rm -rf "$target_dir/$file"; done
+# Discord traffic is routed by the service account UID on this host.
+# The database backup stays private to root; only command cleanup uses pitstop.
+runuser -u pitstop -- /usr/bin/node --env-file=.env "$target_dir/deploy/remove-rpg.mjs" commands "$backup_dir"
 systemctl restart pit-stop.service
 healthy=0
 for attempt in {1..30}; do

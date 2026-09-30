@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { REST, Routes } from 'discord.js';
 import { readConfig } from '../src/config.js';
+import { safeError } from '../src/logger.js';
 
 export const retiredCommands = new Set(['rpg-rehber', 'çalış', 'vardiya', 'maden', 'günlük', 'mağaza', 'market', 'satın-al', 'savaş', 'sınıf', 'öfke', 'ateş-topu', 'nişan', 'iksir', 'görev', 'üret', 'karaborsa', 'garaj', 'garaj-market', 'kargo-hızlandır', 'ekipman-bakım', 'araçlarım', 'parça-al', 'mod-kutusu', 'hurdalık', 'müşteri-tamir', 'araba-al', 'araba-tamir', 'araba-parçala', 'modifiye', 'araba-sat', 'açık-artırma', 'teklif-ver', 'işe-al', 'ikramiye-ver', 'izin-ver', 'mesai-topla', 'otomatik-mesai', 'tamir-et', 'yol-yardım', 'dünya', 'zindan', 'gönder', 'düello', 'zar-at', 'bahis', 'profil', 'sıralama']);
 
@@ -32,8 +33,14 @@ export async function retireDiscordCommands(rest, config) {
 
 async function main() {
   const [operation, backupDir] = process.argv.slice(2);
-  if (!['remove', 'restore'].includes(operation) || !backupDir?.startsWith('/opt/pit-stop-optimize-backup.')) throw new Error('Geçersiz yedek konumu veya işlem.');
+  if (!['remove', 'restore', 'commands'].includes(operation) || !backupDir?.startsWith('/opt/pit-stop-optimize-backup.')) throw new Error('Geçersiz yedek konumu veya işlem.');
   const config = readConfig();
+  if (operation === 'commands') {
+    const rest = new REST({ version: '10', timeout: 15_000, retries: 2 }).setToken(config.token);
+    const deleted = await retireDiscordCommands(rest, config);
+    console.log(`Discord üzerinden ${deleted} eski oyun komutu kaldırıldı.`);
+    return;
+  }
   const databasePath = join(config.dataDir, 'pit-stop.sqlite');
   const snapshot = join(backupDir, 'database.sqlite');
   const manifest = join(backupDir, 'database.json');
@@ -58,11 +65,8 @@ async function main() {
     if (database.prepare('PRAGMA integrity_check').get().integrity_check !== 'ok') throw new Error('Veritabanı doğrulaması başarısız.');
     console.log('Oyun kayıtları kaldırıldı:', JSON.stringify(removed));
   } finally { database.close(); }
-  const rest = new REST({ version: '10', timeout: 15_000, retries: 2 }).setToken(config.token);
-  const deleted = await retireDiscordCommands(rest, config);
-  console.log(`Discord üzerinden ${deleted} eski oyun komutu kaldırıldı.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => { console.error('Oyun kaldırma işlemi başarısız. Dağıtım önceki sürüme dönecek.'); process.exitCode = 1; });
+  main().catch(error => { console.error('Oyun kaldırma işlemi başarısız. Dağıtım önceki sürüme dönecek.', safeError(error)); process.exitCode = 1; });
 }
