@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createHash } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
 import { ChannelType, Collection, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { createDashboard, validateGuildSettings } from '../src/dashboard.js';
@@ -568,6 +569,41 @@ test('RPG item icons are public immutable assets and do not consume the API rate
   }
   assert.equal((await fixture.request('/api/me')).status, 401);
   assert.equal((await fixture.request('/assets/rpg/not-a-catalog-item.webp')).status, 401);
+});
+
+test('login video streams public byte ranges, suffixes and HEAD without an API session', async (t) => {
+  const fixture = await setup(t);
+  const path = '/assets/login-tuner.mp4';
+  const file = new URL('../public/assets/login-tuner.mp4', import.meta.url);
+  const { size } = await stat(file);
+  const content = await readFile(file);
+  const head = await fixture.request(path, { method: 'HEAD', headers: { Range: 'bytes=0-15' } });
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get('content-type'), 'video/mp4');
+  assert.equal(head.headers.get('accept-ranges'), 'bytes');
+  assert.equal(Number(head.headers.get('content-length')), size);
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+  for (const [range, start, end] of [
+    ['bytes=0-31', 0, 31], ['bytes=-16', size - 16, size - 1],
+    [`bytes=${size - 16}-`, size - 16, size - 1],
+    [`bytes=${size - 16}-${size + 99}`, size - 16, size - 1],
+  ]) {
+    const response = await fixture.request(path, { headers: { Range: range } });
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get('content-range'), `bytes ${start}-${end}/${size}`);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), content.subarray(start, end + 1));
+  }
+  for (const range of [`bytes=${size}-`, 'bytes=4-2', 'bytes=-0', 'bytes=0-1,4-5', 'bytes=-', 'bytes=999999999999999999999-']) {
+    const response = await fixture.request(path, { headers: { Range: range } });
+    assert.equal(response.status, 416);
+    assert.equal(response.headers.get('content-range'), `bytes */${size}`);
+    assert.equal((await response.arrayBuffer()).byteLength, 0);
+  }
+  const full = await fixture.request(path);
+  assert.equal(full.status, 200);
+  assert.deepEqual(Buffer.from(await full.arrayBuffer()), content);
+  assert.equal((await fixture.request('/login-background.js')).status, 200);
+  assert.equal((await fixture.request('/assets/login-tuner-poster.jpg', { method: 'HEAD' })).headers.get('content-type'), 'image/jpeg');
 });
 
 test('missing OAuth configuration keeps the public dashboard available and login closed', async (t) => {

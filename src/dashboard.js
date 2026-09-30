@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename } from 'node:path';
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
@@ -17,6 +18,7 @@ const manageGuild = PermissionFlagsBits.ManageGuild;
 const staticFiles = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/login-background.js', ['login-background.js', 'text/javascript; charset=utf-8']],
   ['/rpg-view.js', ['rpg-view.js', 'text/javascript; charset=utf-8']],
   ['/rpg-vehicles-view.js', ['rpg-vehicles-view.js', 'text/javascript; charset=utf-8']],
   ['/rpg-garage-scene.js', ['rpg-garage-scene.js', 'text/javascript; charset=utf-8']],
@@ -27,6 +29,7 @@ const staticFiles = new Map([
   ['/assets/login-brand.png', ['assets/login-brand.png', 'image/png']],
   ['/assets/logo.webp', ['assets/logo.webp', 'image/webp']],
   ['/assets/banner.webp', ['assets/banner.webp', 'image/webp']],
+  ['/assets/login-tuner-poster.jpg', ['assets/login-tuner-poster.jpg', 'image/jpeg']],
 ]);
 for (const item of RPG_ITEMS) {
   if (item.icon?.startsWith('/assets/rpg/') && /^[a-z0-9-]+\.webp$/u.test(item.icon.slice('/assets/rpg/'.length))) {
@@ -216,6 +219,36 @@ export function createDashboard({ client, store, music, features, crew, boostedE
     if (secure) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(request.url, base);
+      if (url.pathname === '/assets/login-tuner.mp4' && ['GET', 'HEAD'].includes(request.method)) {
+        const path = fileURLToPath(new URL('../public/assets/login-tuner.mp4', import.meta.url));
+        const { size } = await stat(path);
+        const headers = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600' };
+        let start = 0, end = size - 1, status = 200;
+        // HEAD describes the complete resource; Range only applies to GET.
+        if (request.method === 'GET' && request.headers.range) {
+          const match = /^bytes=(\d*)-(\d*)$/u.exec(request.headers.range);
+          if (match && (match[1] || match[2])) {
+            if (!match[1]) start = Math.max(0, size - Number(match[2]));
+            else { start = Number(match[1]); end = match[2] ? Math.min(end, Number(match[2])) : end; }
+          } else start = size;
+          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) {
+            response.writeHead(416, { ...headers, 'Content-Range': `bytes */${size}`, 'Content-Length': 0 });
+            response.end();
+            return;
+          }
+          status = 206;
+          headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+        }
+        response.writeHead(status, { ...headers, 'Content-Length': end - start + 1 });
+        if (request.method === 'HEAD') response.end();
+        else {
+          const stream = createReadStream(path, { start, end });
+          stream.on('error', error => response.destroy(error));
+          response.on('close', () => stream.destroy());
+          stream.pipe(response);
+        }
+        return;
+      }
       if (staticFiles.has(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
         const [file, type, immutable] = staticFiles.get(url.pathname);
         const body = await readFile(fileURLToPath(new URL(`../public/${file}`, import.meta.url)));

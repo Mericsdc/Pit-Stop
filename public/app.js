@@ -1,5 +1,6 @@
 import { staticHosting, livePanelUrl } from './site-config.js';
 import { renderRpgContent } from './rpg-view.js';
+import { createLoginBackground } from './login-background.js';
 
 // Keep panel artwork and rendered records inside the interface. Form fields stay editable,
 // but copying/cutting, drag export and the context menu are disabled across the site.
@@ -20,10 +21,13 @@ for (const media of document.querySelectorAll('img, video')) media.draggable = f
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0, rpgLastResult: null, nrzMaps: null, nrzResult: null };
+const loginBackground = createLoginBackground($('#login-background-video'), $('#login-background-image'), new URL('./assets/login-tuner.mp4', import.meta.url).href);
+document.addEventListener('visibilitychange', () => loginBackground.setVisible(document.body.classList.contains('logged-out') && !document.hidden));
+for (const event of ['pointerdown', 'keydown']) document.addEventListener(event, () => loginBackground.play(), { passive: true });
+const state = { csrf: '', guild: null, guilds: [], view: 'overview', logs: [], dirty: false, me: null, crewSort: { key: 'last24hCrewRep', direction: 'desc' }, navOrder: [], panelAccess: null, faqRecords: [], reactionRoleRecords: [], editingFaqId: null, rpgData: null, rpgSection: 'home', rpgClockOffset: 0, rpgLastResult: null };
 let guildLoadVersion = 0;
-const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', nrz: 'NRZ yarış sıralaması', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
-const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'nrz', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
+const titles = { overview: 'Genel bakış', crew: 'Ekip REP takibi', boosted: 'Boosted Event takibi', faq: 'Sık sorulan sorular', music: 'Müzik istasyonu', rpg: 'Mini RPG ve ekonomi', community: 'Üyeler ve roller', reactionRoles: 'Emoji ile rol verme', responders: 'Otomatik cevaplar', protection: 'Spam ve oltalama', blacklist: 'Üye kara listesi', tickets: 'Destek ve savunma', tools: 'Hatırlatıcı ve sağlık', logs: 'Olay kayıtları', access: 'Yetkilendirme', settings: 'Bot ve sistem ayarları' };
+const navGroups = { general: ['overview'], community: ['crew', 'boosted', 'faq', 'music', 'rpg'], automation: ['community', 'reactionRoles', 'responders', 'protection', 'blacklist', 'tickets', 'tools'], system: ['logs', 'access', 'settings'] };
 const defaultNavOrder = Object.values(navGroups).flat();
 const panelViewKey = 'pitstop-current-view';
 const sidebarCollapsedKey = 'pitstop-sidebar-collapsed';
@@ -87,17 +91,7 @@ function applyAppearance(settings = state.guild?.settings) {
   for (const image of [$('#panel-logo'), $('#login-logo')].filter(Boolean)) { image.onerror = () => { image.onerror = null; image.src = '/assets/login-brand.png'; }; image.src = logo; }
   const banner = settings?.panelBannerUrl || '/assets/banner.webp';
   if ($('#hero-banner')) { $('#hero-banner').onerror = () => { $('#hero-banner').onerror = null; $('#hero-banner').src = '/assets/banner.webp'; }; $('#hero-banner').src = banner; }
-  const background = settings?.panelLoginBackgroundUrl || '';
-  const backgroundImage = $('#login-background-image'), backgroundVideo = $('#login-background-video');
-  if (backgroundImage && backgroundVideo) {
-    backgroundImage.hidden = true; backgroundVideo.hidden = true; backgroundVideo.pause(); backgroundVideo.removeAttribute('src');
-    if (background) {
-      let isVideo = false;
-      try { isVideo = /\.(?:mp4|webm|ogg)$/iu.test(new URL(background).pathname); } catch { /* Server-side validation reports invalid URLs. */ }
-      if (isVideo) { backgroundVideo.src = background; backgroundVideo.hidden = false; void backgroundVideo.play().catch(() => { backgroundVideo.hidden = true; }); }
-      else { backgroundImage.onerror = () => { backgroundImage.hidden = true; }; backgroundImage.src = background; backgroundImage.hidden = false; }
-    }
-  }
+  loginBackground.setSource(settings?.panelLoginBackgroundUrl);
 }
 function setMenuOpen(open) { document.body.classList.toggle('menu-open', open); const toggleButton = $('#menu-toggle'); if (toggleButton) { toggleButton.setAttribute('aria-expanded', String(open)); toggleButton.setAttribute('aria-label', open ? 'Menüyü kapat' : 'Menüyü aç'); } if ($('#menu-backdrop')) $('#menu-backdrop').hidden = !open; }
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -105,7 +99,6 @@ const check = value => value ? 'checked' : '';
 const badge = (value, yes = 'Etkin', no = 'Kapalı') => `<span class="badge ${value ? 'on' : 'off'}">${value ? '●' : '○'} ${escape(value ? yes : no)}</span>`;
 const number = value => Number(value || 0).toLocaleString('tr-TR');
 const duration = ms => `${Math.floor((ms || 0) / 60000)}:${String(Math.floor((ms || 0) / 1000) % 60).padStart(2, '0')}`;
-const raceTime = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
 const uptime = seconds => seconds >= 86400 ? `${Math.floor(seconds / 86400)} gün` : seconds >= 3600 ? `${Math.floor(seconds / 3600)} sa` : `${Math.floor(seconds / 60)} dk`;
 const date = value => value ? new Date(value).toLocaleString('tr-TR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) : '—';
 function greetingText() {
@@ -402,48 +395,6 @@ function renderBoosted() {
   const progress = event.event?.endsAt ? `<section class="boosted-progress" data-ends-at="${Number(event.event.endsAt)}"><div class="boosted-progress-head"><strong>30 dakikalık yarış süresi</strong><span data-boosted-progress-text>Hesaplanıyor…</span></div><div class="boosted-progress-track" role="progressbar" aria-label="Boosted Event kalan süre" aria-valuemin="0" aria-valuemax="100"><span data-boosted-progress-fill></span></div></section>` : '';
   return `<form id="boosted-form" class="card form-stack"><div class="card-header"><div><h3>Boosted Event takibi</h3><p class="muted tiny">NightRiderz canlı haritası saat ve yarım saat güncellemelerinden sonra kontrol edilir.</p></div>${badge(s.boostedEventEnabled)}</div>${toggle('boosted-event-enabled', 'Etkinlik duyuruları', 'Yeni yarış bulunduğunda seçilen kanala bağlantı, sınıf ve bitiş saatiyle gönder; sınıf simgesini mesaja tepki olarak ekler.', s.boostedEventEnabled)}<label>Bildirim kanalı<select id="boosted-event-channel">${channelOptions(s.boostedEventChannelId || event.channelId)}</select></label>${progress}<p class="muted tiny">Son kontrol: ${date(event.checkedAt)}${event.event ? ` · <a href="${escape(event.event.url || `https://nightriderz.world/leaderboard/${event.event.id}`)}" target="_blank" rel="noopener noreferrer">${escape(event.event.name)}</a> · ${escape(event.event.className)}${event.event.endsAt ? ` · Bitiş: ${date(event.event.endsAt)}` : ''}` : ''}</p>${event.error ? `<p class="hint">${escape(event.error)}</p>` : ''}<div class="form-actions"><button type="button" class="button subtle" id="refresh-boosted-event">Şimdi kontrol et ve bildir</button><button class="button primary">Ayarları kaydet</button></div></form>`;
 }
-
-function renderNrzRows(label, id, rows) {
-  const href = id ? `https://nightriderz.world/leaderboard/${id}/1/${id >= 5000 ? 'nopu' : 'pu'}` : null;
-  return `<section class="card nrz-board"><div class="card-header"><div><h3>${escape(label)}</h3><p class="muted tiny">En hızlı 10 geçerli derece</p></div>${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">NRZ’de aç ↗</a>` : ''}</div>${!rows?.length ? '<p class="muted">Bu modda henüz derece bulunamadı.</p>' : `<div class="table-wrap"><table><thead><tr><th>#</th><th>Süre</th><th>Sürücü</th><th>Araç</th><th>Puan ve tuning</th></tr></thead><tbody>${rows.map((row, index) => {
-    const setup = row.setupHash ? `https://nightriderz.world/car/${encodeURIComponent(row.setupHash)}` : null;
-    const tuning = row.tuning;
-    const parts = [['Performans', tuning?.performance], ['Yetenek', tuning?.skills], ['Görsel', tuning?.visual]]
-      .filter(([, values]) => values?.length).map(([title, values]) => `<p><strong>${title}:</strong> ${values.map(escape).join(' · ')}</p>`).join('');
-    return `<tr><td data-label="Sıra">${index + 1}</td><td data-label="Süre"><strong>${raceTime(row.milliseconds)}</strong></td><td data-label="Sürücü">${escape(row.driver)}</td><td data-label="Araç">${escape(row.car)}</td><td data-label="Tuning">${row.rating ? `${number(row.rating)} puan` : '—'}${parts || setup ? `<details class="nrz-setup"><summary>Araç ayarları</summary>${parts || '<p>Parça verisi NRZ’de mevcut değil.</p>'}${setup ? `<a href="${setup}" target="_blank" rel="noopener noreferrer">Tam kurulumu NRZ’de aç ↗</a>` : ''}</details>` : ''}</td></tr>`;
-  }).join('')}</tbody></table></div>`}</section>`;
-}
-
-function renderNrzResult(result) {
-  if (!result) return '<p class="muted">Harita seçince normal ve Time Attack dereceleri burada görünecek.</p>';
-  if (!result.map) {
-    const choices = result.suggestions || [];
-    return choices.length ? `<section class="card"><h3>Harita seç</h3><div class="nrz-suggestions">${choices.map(map => `<button type="button" class="button subtle" data-nrz-map="${escape(map.name)}">${escape(map.name)}</button>`).join('')}</div></section>` : '<section class="card"><p>Bu isimde yarış bulunamadı. NRZ’deki harita adını kontrol edin.</p></section>';
-  }
-  const map = result.map;
-  return `<div class="nrz-result-heading"><h3>${escape(map.name)}</h3><span class="badge ${map.active ? 'on' : 'off'}">${map.active ? 'Aktif yarış' : 'Tüm yarışlar'}</span></div><div class="nrz-boards">${renderNrzRows('Normal yarış', map.id, result.normal)}${renderNrzRows('Time Attack', map.timeAttackId, result.timeAttack)}</div>`;
-}
-
-function renderNrz() {
-  return `<section class="card nrz-search"><div class="card-header"><div><h3>NRZ harita dereceleri</h3><p class="muted tiny">Tüm yarış etkinliklerinde ara. Discord’da <code>!map Harita Adı</code> veya <code>/map</code> kullanabilirsin.</p></div><span id="nrz-map-count" class="badge">${state.nrzMaps ? `${state.nrzMaps.length} harita` : 'Haritalar yükleniyor…'}</span></div><form id="nrz-map-form" class="nrz-search-form"><label for="nrz-map-name" class="sr-only">Harita adı</label><input id="nrz-map-name" name="name" type="search" list="nrz-map-options" maxlength="100" placeholder="Örn. Agathe Street" required value="${escape(state.nrzResult?.map?.name || '')}"><datalist id="nrz-map-options">${(state.nrzMaps || []).map(map => `<option value="${escape(map.name)}"></option>`).join('')}</datalist><button class="button primary" type="submit">İlk 10’u göster</button></form></section><div id="nrz-results" aria-live="polite">${renderNrzResult(state.nrzResult)}</div>`;
-}
-
-async function loadNrzCatalog() {
-  if (!state.nrzMaps) state.nrzMaps = (await guildApi('nrz-maps')).maps;
-  if (state.view !== 'nrz') return;
-  const list = $('#nrz-map-options');
-  if (list) list.innerHTML = state.nrzMaps.map(map => `<option value="${escape(map.name)}"></option>`).join('');
-  if ($('#nrz-map-count')) $('#nrz-map-count').textContent = `${state.nrzMaps.length} harita`;
-}
-
-async function searchNrz(name) {
-  const guildId = state.guild?.id;
-  if ($('#nrz-results')) $('#nrz-results').innerHTML = '<div class="loading">NRZ dereceleri yükleniyor…</div>';
-  const result = await guildApi(`nrz-map?name=${encodeURIComponent(name)}`);
-  if (state.guild?.id !== guildId || state.view !== 'nrz') return;
-  state.nrzResult = result;
-  if ($('#nrz-results')) $('#nrz-results').innerHTML = renderNrzResult(result);
-}
 function updateBoostedProgress() {
   const progress = $('.boosted-progress');
   if (!progress) return;
@@ -464,13 +415,12 @@ function renderSettingsBase() {
   const s = state.guild.settings, perms = state.guild.bot.permissions;
   const commands = [['/panel-giris', 'Tek kullanımlık güvenli panel giriş kodu üret.'], ['/hatırlat · /hatırlatıcılar', 'Kişisel hatırlatma oluştur, listele veya iptal et.'], ['/healthcare', 'Mola hatırlatmalarına katıl veya kapat.'], ['/bilet-kapat', 'Destek biletini kapat.'], ['/uyar · /savunma-yanıt', 'Üyeyi uyar veya özel savunmaya yanıt ver.'], ['/yardim', 'Tüm komutları ve kullanımını göster.'], ['/clear · /temizle', 'Adet verilmezse tüm kanalı, verilirse son 1–100 mesajı temizle.'], ['/play · /pause · /skip · /stop', 'Müzik istasyonunu yönet.']];
   const active = [['Otomatik rol',s.autoRoleEnabled],['Emoji ile rol',state.guild.reactionRoleCount > 0],['Ayrılma mesajı',s.leaveEnabled],['Otomatik cevap',s.responderEnabled],['Müzik',s.musicEnabled],['Spam',s.antiSpamEnabled],['Oltalama',s.antiPhishingEnabled],['Bilet',s.ticketEnabled],['Savunma',s.defenseEnabled],['Sağlık',s.healthEnabled],['Boosted Event',s.boostedEventEnabled],['SSS',s.faqEnabled]];
-  commands.push(['!map · /map', 'NRZ yarış haritasının normal ve Time Attack ilk 10 süresini ve tuning verisini göster.']);
   commands.push(['/çalış · /maden', 'Sanal altın ve XP kazan. Çalışma 30, maden 15 dakikada bir kullanılabilir.'], ['/mağaza · /satın-al · /profil', 'Ekipman satın al ve karakterini görüntüle. En güçlü kılıç ve zırh otomatik kuşanılır.'], ['/savaş · /sıralama', '5 dakikada bir zarla canavar savaşı; sunucu sıralaması XP, galibiyet ve altına göre hesaplanır.']);
   const guildOptions = state.guilds.map(guild => `<option value="${escape(guild.id)}" ${guild.id === state.guild.id ? 'selected' : ''}>${escape(guild.name)}</option>`).join('');
   return `<div class="grid-2 settings-grid">
     <section class="card form-stack"><div><h3>Yönetilen Discord sunucusu</h3><p class="muted tiny">Panelde ayarlarını değiştirmek istediğiniz sunucuyu seçin.</p></div><label for="guild-select">Sunucu<select id="guild-select">${guildOptions}</select></label></section>
     <form id="settings-form" class="card form-stack"><div><h3>Discord kayıt kanalı</h3><p class="muted tiny">Panel kayıtlarına ek olarak Discord’a olay özeti gönderir.</p></div><label for="log-channel">Kayıt kanalı<select id="log-channel">${channelOptions(s.logChannelId)}</select></label><div class="form-actions"><button class="button primary">Kayıt kanalını kaydet</button></div></form>
-    <form id="appearance-form" class="card form-stack"><div><h3>Panel görselleri ve giriş arka planı</h3><p class="muted tiny">HTTPS adresi kullanın. Giriş arka planı resim, GIF, MP4, WebM veya OGG olabilir; boş alan siyah arka plana döner.</p></div><label for="panel-logo-url">Logo görseli adresi<input id="panel-logo-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelLogoUrl || '')}"></label><label for="panel-banner-url">Genel bakış banner adresi<input id="panel-banner-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelBannerUrl || '')}"></label><label for="panel-login-background-url">Giriş ekranı arka plan adresi<input id="panel-login-background-url" type="url" maxlength="1000" placeholder="https://.../garaj.webp veya garaj.mp4" value="${escape(s.panelLoginBackgroundUrl || '')}"></label><div class="form-actions"><button type="button" id="reset-appearance" class="button subtle">Varsayılana dön</button><button class="button primary">Görselleri kaydet</button></div></form>
+    <form id="appearance-form" class="card form-stack"><div><h3>Panel görselleri ve giriş arka planı</h3><p class="muted tiny">HTTPS adresi kullanın. Giriş arka planı resim, GIF, MP4, WebM veya OGG olabilir; boş alan varsayılan Cars videosuna döner.</p></div><label for="panel-logo-url">Logo görseli adresi<input id="panel-logo-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelLogoUrl || '')}"></label><label for="panel-banner-url">Genel bakış banner adresi<input id="panel-banner-url" type="url" maxlength="1000" placeholder="https://..." value="${escape(s.panelBannerUrl || '')}"></label><label for="panel-login-background-url">Giriş ekranı arka plan adresi<input id="panel-login-background-url" type="url" maxlength="1000" placeholder="https://.../garaj.webp veya garaj.mp4" value="${escape(s.panelLoginBackgroundUrl || '')}"></label><div class="form-actions"><button type="button" id="reset-appearance" class="button subtle">Varsayılana dön</button><button class="button primary">Görselleri kaydet</button></div></form>
     <section class="card"><h3>Bot izinlerinin durumu</h3>${[['manageRoles','Rolleri Yönet'],['manageMessages','Mesajları Yönet'],['addReactions','Tepki Ekle'],['connect','Bağlan'],['speak','Konuş'],['moderateMembers','Zaman Aşımı'],['viewAuditLog','Denetim Kaydı'],['manageChannels','Kanalları Yönet'],['createPrivateThreads','Özel İleti Dizisi'],['manageThreads','İleti Dizilerini Yönet']].map(([key,label]) => `<div class="permission"><span>${label}</span>${badge(perms[key], 'Var', 'Eksik')}</div>`).join('')}</section>
     <section class="card"><h3>Genel modül durumları</h3><div class="module-status-grid">${active.map(([name,on]) => `<div><span>${name}</span>${badge(on)}</div>`).join('')}</div></section>
     <section class="card"><h3>Sistem ve bağlantı bilgileri</h3><div class="permission"><span>Discord</span>${badge(state.guild.bot.ready,'Bağlı','Bağlantı yok')}</div><div class="permission"><span>Veritabanı</span>${badge(true,'Bağlı','Hata')}</div><div class="permission"><span>Müzik servisi</span>${badge(state.guild.music.available,'Hazır','Bekliyor')}</div><div class="permission"><span>Gecikme</span><strong>${number(state.guild.bot.ping)} ms</strong></div><div class="permission"><span>Çalışma süresi</span><strong>${uptime(state.guild.bot.uptime)}</strong></div></section>
@@ -555,7 +505,7 @@ function render() {
   $('#view-title').textContent = titles[state.view];
   $('#page-label').textContent = titles[state.view];
   $$('.nav-button').forEach(button => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  const page = ({ overview: renderOverview, rpg: renderRpg, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, nrz: renderNrz, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
+  const page = ({ overview: renderOverview, rpg: renderRpg, community: renderCommunity, reactionRoles: renderReactionRoles, crew: renderCrew, boosted: renderBoosted, responders: renderResponders, music: renderMusicPage, logs: renderLogs, settings: renderSettings, blacklist: renderBlacklist, protection: renderProtection, tickets: renderTickets, tools: renderTools, faq: renderFaq, access: renderAuthorization })[state.view]();
   $('#view-content').innerHTML = page.replaceAll('/sağlık-asistanı', '/healthcare');
   applyOverviewHeight();
   if (['blacklist', 'tickets', 'tools', 'faq', 'reactionRoles', 'access', 'settings'].includes(state.view)) void loadFeatureRecords().catch(error => notice(error.message, true));
@@ -564,7 +514,6 @@ function render() {
   if ($('#leave-preview')) updateLeavePreview();
   if (state.view === 'crew') void loadCrew().catch(error => notice(error.message, true));
   if (state.view === 'boosted') updateBoostedProgress();
-  if (state.view === 'nrz') void loadNrzCatalog().catch(error => notice(error.message, true));
   if (state.view === 'rpg') void loadRpg();
   if (state.view === 'reactionRoles') updateReactionRolePreview();
 }
@@ -716,7 +665,6 @@ document.addEventListener('click', async event => {
     if (button.hasAttribute('data-crew-sort')) { const key = button.dataset.crewSort; state.crewSort = { key, direction: state.crewSort.key === key ? (state.crewSort.direction === 'desc' ? 'asc' : 'desc') : (key === 'name' ? 'asc' : 'desc') }; $('#crew-content').innerHTML = crewBody(state.guild.crew); return; }
     if (button.id === 'refresh-crew') { button.disabled = true; await loadCrew(true); notice('Ekip REP ve profil bilgileri güncellendi.'); }
     if (button.id === 'refresh-boosted-event') { button.disabled = true; state.guild.boostedEvent = await guildApi('boosted-event', { method: 'POST', body: '{}' }); render(); notice(state.guild.boostedEvent.error ? state.guild.boostedEvent.error : 'Boosted Event kontrol edildi ve kanala bildirildi.', Boolean(state.guild.boostedEvent.error)); }
-    if (button.dataset.nrzMap) { $('#nrz-map-name').value = button.dataset.nrzMap; await searchNrz(button.dataset.nrzMap); return; }
     if (button.id === 'more-logs') await loadLogs(true);
     if (button.id === 'publish-ticket') { await guildApi('tickets', { method: 'POST', body: '{}' }); notice('Destek düğmesi seçilen kanala yayımlandı.'); }
     if (button.dataset.editFaq) {
@@ -747,7 +695,7 @@ document.addEventListener('click', async event => {
 });
 document.addEventListener('pointerup', event => saveOverviewHeight(event.composedPath().find(node => node?.matches?.('[data-dashboard-size]'))));
 document.addEventListener('input', event => {
-  if (event.target.closest('form') && event.target.type !== 'search' && !event.target.closest('#play-form,#volume-form,#code-login-form,#nrz-map-form')) state.dirty = true;
+  if (event.target.closest('form') && event.target.type !== 'search' && !event.target.closest('#play-form,#volume-form,#code-login-form')) state.dirty = true;
   if (event.target.id === 'leave-message') updateLeavePreview();
   if (event.target.id === 'volume') $('#volume-value').textContent = `${event.target.value}%`;
   if (event.target.id === 'faq-question' || event.target.id === 'faq-answer') { const preview = $('#faq-preview'); if (preview) preview.innerHTML = `<strong>${escape($('#faq-question').value || 'Soru')}</strong><p>${escape($('#faq-answer').value || 'Cevap')}</p>`; }
@@ -774,7 +722,6 @@ document.addEventListener('submit', async event => {
   notice('');
   try {
     if (form.id === 'code-login-form') { const code = $('#login-code').value.trim(); $('#login-error').textContent = ''; button.textContent = 'Kod doğrulanıyor…'; await api('/auth/code', { method: 'POST', body: JSON.stringify({ code }) }); $('#login-code').value = ''; await boot(); return; }
-    if (form.id === 'nrz-map-form') { await searchNrz($('#nrz-map-name').value.trim()); return; }
     if (form.id === 'community-form') await saveSettings({ autoRoleEnabled: $('#auto-role-enabled').checked, autoRoleIds: selectedRoles('auto-role-ids'), leaveEnabled: $('#leave-enabled').checked, leaveChannelId: $('#leave-channel').value || null, leaveMessage: $('#leave-message').value });
     if (form.id === 'blacklist-settings') await saveSettings({ blacklistOnLeave: $('#blacklist-on-leave').checked });
     if (form.id === 'blacklist-add') { await guildApi('blacklist', { method: 'POST', body: JSON.stringify({ userId: $('#blacklist-user').value.trim(), reason: $('#blacklist-reason').value.trim() }) }); form.reset(); state.dirty = false; await loadFeatureRecords(); notice('Kullanıcı kara listeye eklendi.'); }
@@ -903,6 +850,7 @@ function showLogin() {
   $('#workspace').hidden = true;
   $('#login-panel').hidden = false;
   document.body.classList.add('logged-out');
+  loginBackground.setVisible(!document.hidden);
   document.documentElement.classList.remove('auth-pending');
   updateLoginClock();
   if (!loginClockTimer) loginClockTimer = setInterval(updateLoginClock, 1000);
@@ -936,6 +884,7 @@ async function boot() {
     clearInterval(loginClockTimer); loginClockTimer = null;
     $('#login-panel').hidden = true;
     $('#workspace').hidden = false;
+    loginBackground.setVisible(false);
     document.body.classList.remove('logged-out');
     document.documentElement.classList.remove('auth-pending');
   } catch (error) { showLogin(); notice(error.message, true); }

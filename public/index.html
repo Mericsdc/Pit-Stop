@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0a0c12">
+  <meta name="theme-color" content="#000000">
   <meta name="description" content="Pit-Stop Discord botu: sunucu ayarları, otomatik roller, cevaplar, müzik ve olay kayıtları.">
   <title>Pit-Stop · Kontrol merkezi</title>
-  <style>html.auth-pending{background:#0a0c12}html.auth-pending body{visibility:hidden}</style>
   <link rel="icon" href="/assets/logo.webp" type="image/webp">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/layout.css">
@@ -20,7 +19,7 @@
       <section class="nav-section" data-nav-group="general"><h2>GENEL</h2><div class="nav-items"><button data-view="overview" class="nav-button active"><span aria-hidden="true">◈</span> Genel bakış</button></div></section>
       <section class="nav-section" data-nav-group="community"><h2>OYUN VE TOPLULUK</h2><div class="nav-items">
         <button data-view="rpg" class="nav-button"><span aria-hidden="true">⚔</span> Mini RPG ve ekonomi</button>
-        <button data-view="crew" class="nav-button"><span aria-hidden="true">🏁</span> Ekip REP takibi</button><button data-view="boosted" class="nav-button"><span aria-hidden="true">⚡</span> Boosted Event takibi</button><button data-view="nrz" class="nav-button"><span aria-hidden="true">🏆</span> NRZ yarış sıralaması</button><button data-view="faq" class="nav-button"><span aria-hidden="true">?</span> Sık sorulan sorular</button><button data-view="music" class="nav-button"><span aria-hidden="true">♫</span> Müzik istasyonu</button>
+        <button data-view="crew" class="nav-button"><span aria-hidden="true">🏁</span> Ekip REP takibi</button><button data-view="boosted" class="nav-button"><span aria-hidden="true">⚡</span> Boosted Event takibi</button><button data-view="faq" class="nav-button"><span aria-hidden="true">?</span> Sık sorulan sorular</button><button data-view="music" class="nav-button"><span aria-hidden="true">♫</span> Müzik istasyonu</button>
       </div></section>
       <section class="nav-section" data-nav-group="automation"><h2>OTOMASYON VE MODERASYON</h2><div class="nav-items">
         <button data-view="community" class="nav-button"><span aria-hidden="true">♧</span> Üyeler ve roller</button><button data-view="reactionRoles" class="nav-button"><span aria-hidden="true">☺</span> Emoji ile rol verme</button><button data-view="responders" class="nav-button"><span aria-hidden="true">⌘</span> Otomatik cevaplar</button><button data-view="protection" class="nav-button"><span aria-hidden="true">◇</span> Spam ve oltalama</button><button data-view="blacklist" class="nav-button"><span aria-hidden="true">⊘</span> Üye kara listesi</button><button data-view="tickets" class="nav-button"><span aria-hidden="true">✉</span> Destek ve savunma</button><button data-view="tools" class="nav-button"><span aria-hidden="true">◷</span> Hatırlatıcı ve sağlık</button>
@@ -39,7 +38,7 @@
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <section id="login-panel" class="login-screen" hidden>
         <img id="login-background-image" class="login-background-media" alt="" draggable="false" hidden>
-        <video id="login-background-video" class="login-background-media" draggable="false" muted loop autoplay playsinline preload="metadata" aria-hidden="true" hidden></video>
+        <video id="login-background-video" class="login-background-media" src="./assets/login-tuner.mp4" poster="./assets/login-tuner-poster.jpg" draggable="false" muted loop autoplay playsinline preload="auto" aria-hidden="true"></video>
         <div class="login-page-brand"><img class="login-brand-image" src="/assets/login-brand.png" alt="Pit-Stop kontrol merkezi" width="2058" height="764" fetchpriority="high" draggable="false"></div>
         <div class="login-card">
           <span class="login-eyebrow">KONTROL MERKEZİ</span><h1>Hoş geldiniz</h1><p>Kontrol merkezine erişmek için Discord botundan aldığın tek kullanımlık giriş kodunu kullan.</p>
