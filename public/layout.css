@@ -227,7 +227,7 @@ body:not(.logged-out) #notice.notice { position: fixed; z-index: 2000; right: 24
 .overview-stats .stat-icon, .overview-stats .stat-label .status-dot { display: none; }
 .overview-stats .stat-value { align-self: center; margin: 8px 0 4px; font-size: clamp(25px, 2vw, 31px); }
 .overview-stats .stat-value small { color: var(--muted); font-size: 13px; font-weight: 500; letter-spacing: 0; }
-.overview-stats .status-value { color: #79bf9b; font-size: clamp(21px, 1.7vw, 27px); }
+.overview-stats .status-value { color: #00cfe8; font-size: clamp(21px, 1.7vw, 27px); }
 .overview-primary-grid, .overview-lower-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, .82fr); gap: 16px; align-items: stretch; }
 .overview-primary-grid > .card { height: 100%; }
 .overview-lower-grid { grid-template-columns: minmax(0, 1.45fr) minmax(350px, .85fr); }
@@ -309,30 +309,32 @@ html.auth-pending { background: #000; }
 html.auth-pending body { visibility: hidden; }
 :root:not([data-theme="light"]) {
   --bg: #000000;
-  --surface: #0b1112;
-  --raised: #121c1e;
-  --border: #253b3e;
-  --text: #eefafa;
-  --muted: #a0b8bb;
-  --cyan: #38ded3;
+  --surface: #0b0d10;
+  --raised: #15191d;
+  --border: #243a43;
+  --text: #effaff;
+  --muted: #a8bac4;
+  --cyan: #00cfe8;
+  --green: #00cfe8;
 }
-:root[data-theme="light"] { --cyan: #087e77; }
+:root[data-theme="light"] { --cyan: #007f96; }
 :root:not([data-theme="light"]) .nav-button.active {
-  background: #102624;
-  border-color: #28645f;
+  background: #072028;
+  border-color: #185365;
 }
-:root:not([data-theme="light"]) .button.primary { color: #031a18; }
+:root:not([data-theme="light"]) .button.primary { color: #001014; }
 :root:not([data-theme="light"]) .button.primary:hover {
-  background: #82eee6;
-  border-color: #82eee6;
+  background: #75eaff;
+  border-color: #75eaff;
 }
 .login-screen {
   background: #000;
   min-height: 100svh;
-  color: #eefafa;
-  --text: #eefafa;
-  --muted: #b3c8c9;
-  --cyan: #38ded3;
+  color: #effaff;
+  --text: #effaff;
+  --muted: #bac6cf;
+  --cyan: #00cfe8;
+  --green: #00cfe8;
 }
 .login-screen::after {
   background:
@@ -343,21 +345,23 @@ html.auth-pending body { visibility: hidden; }
 .login-page-brand { width: clamp(192px, 20vw, 290px); text-shadow: none; }
 .login-brand-image { filter: drop-shadow(0 10px 26px #0009); }
 .login-card {
-  background: linear-gradient(145deg, #b5fff31a, #00120c33 60%, #9ffff00d);
-  border-color: #38ded366;
-  box-shadow: inset 0 1px 0 #b8fff326, 0 26px 76px #000b;
+  background: linear-gradient(145deg, #ffffff1a, #00000033 60%, #ffffff0d);
+  border-color: #00cfe866;
+  box-shadow: inset 0 1px 0 #c8f6ff26, 0 26px 76px #000b;
   backdrop-filter: blur(4px) saturate(110%);
   -webkit-backdrop-filter: blur(4px) saturate(110%);
 }
-.login-card::before { background: linear-gradient(116deg, transparent 28%, #74fff31a 49%, transparent 70%); }
-.login-card::after { border-color: #38ded318; box-shadow: none; }
-.login-card .login-eyebrow { color: #65e9e0; }
-.login-card .login-time { color: #f2fffd; }
-.login-card .login-datetime::after { background: linear-gradient(90deg, #395e5a 0 42%, #38ded3 42% 58%, #395e5a 58%); }
+.login-card::before { background: linear-gradient(116deg, transparent 28%, #b3f1ff1a 49%, transparent 70%); }
+.login-card::after { border-color: #00cfe818; box-shadow: none; }
+.login-card .login-eyebrow { color: #61e9ff; }
+.login-card .login-time { color: #f2fbff; }
+.login-card .login-datetime::after { background: linear-gradient(90deg, #35545e 0 42%, #00cfe8 42% 58%, #35545e 58%); }
 .login-card .code-input input,
-.login-card .code-input .button { background: #02090866; border-color: #38ded344; }
-.login-card .login-submit { background: #38ded3; border-color: #38ded3; color: #031a18; }
-.login-card .login-submit:hover { background: #82eee6; border-color: #82eee6; }
+.login-card .code-input .button { background: #00000066; border-color: #00cfe844; }
+.login-card .login-submit { background: #00cfe8; border-color: #00cfe8; color: #001014; }
+.login-card .login-submit:hover { background: #75eaff; border-color: #75eaff; }
 @media (max-width: 560px) {.login-page-brand { width: 196px; }}
 
 .login-card h1, .login-card .login-time, .login-card > p { text-shadow: 0 2px 8px #000b; }
+
+:root:not([data-theme="light"]) .badge.on { color: var(--cyan); background: #062027; border-color: #185365; }
