@@ -562,3 +562,19 @@ test('missing OAuth configuration keeps the public dashboard available and login
   assert.equal((await fixture.request('/auth/login')).status, 503);
   assert.equal(fixture.calls.discord.length, 0);
 });
+
+
+test('panel music requests forward links and preserve rate and permission errors', async t => {
+  const fixture = await setup(t);
+  const session = await fixture.login();
+  const post = body => fixture.request(`/api/guilds/${GUILD}/music`, { method: 'POST', headers: { Cookie: session.cookie, Origin: PUBLIC_ORIGIN, 'X-CSRF-Token': session.csrf, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const body = { action: 'play', query: 'https://soundcloud.com/artist/song', source: 'scsearch' };
+  assert.equal((await post(body)).status, 200);
+  assert.deepEqual(fixture.calls.music[0], [GUILD, 'play', { query: body.query, volume: undefined, source: 'scsearch' }, USER]);
+  for (const status of [403, 429, 503]) {
+    fixture.music.control = async () => { throw Object.assign(new Error('private details'), { status, userMessage: 'Safe music error' }); };
+    const response = await post(body);
+    assert.equal(response.status, status);
+    assert.deepEqual(await response.json(), { error: 'Safe music error' });
+  }
+});

@@ -24,13 +24,13 @@ export function playbackFailure(payload) {
 }
 
 /** Only canonical media URLs reach Lavalink; no redirects, arbitrary sources or local files. */
-export function normalizeMusicQuery(input, source = 'ytmsearch') {
+export function normalizeMusicQuery(input, source = 'scsearch') {
   if (typeof input !== 'string' || !input.trim() || input.length > 500 || /[\u0000-\u001f\u007f]/.test(input)) {
-    throw new MusicError('1–500 karakterlik bir şarkı adı veya YouTube/Spotify bağlantısı girin.');
+    throw new MusicError('1–500 karakterlik bir şarkı adı veya desteklenen müzik bağlantısı girin.');
   }
-  if (!['ytsearch', 'ytmsearch'].includes(source)) throw new MusicError('Arama kaynağı YouTube veya YouTube Music olmalı.');
+  if (!['ytsearch', 'ytmsearch', 'scsearch'].includes(source)) throw new MusicError('Arama kaynağı YouTube, YouTube Music veya SoundCloud olmalı.');
   let query = input.trim();
-  const prefix = /^(ytsearch|ytmsearch):/i.exec(query);
+  const prefix = /^(ytsearch|ytmsearch|scsearch):/i.exec(query);
   if (prefix) { source = prefix[1].toLowerCase(); query = query.slice(prefix[0].length).trim(); }
   if (!query) throw new MusicError('Şarkı adını yazın.');
   if (/^https:\/\//i.test(query)) {
@@ -57,10 +57,20 @@ export function normalizeMusicQuery(input, source = 'ytmsearch') {
       }
       throw new MusicError('YouTube video veya çalma listesi bağlantısı girin.');
     }
-    throw new MusicError('Yalnızca YouTube, YouTube Music ve open.spotify.com bağlantıları destekleniyor.');
+    if (['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com', 'on.soundcloud.com'].includes(host)) {
+      if (!/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?$/.test(url.pathname)) throw new MusicError('SoundCloud parça veya çalma listesi bağlantısı girin.');
+      // Keep private-track secret tokens, but strip share tracking and redirect parameters.
+      const secret = url.searchParams.get('secret_token');
+      if (secret && !/^s-[A-Za-z0-9_-]{1,150}$/.test(secret)) throw new MusicError('SoundCloud bağlantısı geçersiz.');
+      url.hostname = host === 'on.soundcloud.com' ? host : 'soundcloud.com';
+      url.search = ''; url.hash = '';
+      if (secret) url.searchParams.set('secret_token', secret);
+      return { query: url.href, source, spotify: false };
+    }
+    throw new MusicError('Yalnızca YouTube, SoundCloud ve open.spotify.com bağlantıları destekleniyor.');
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(query) || /:\/\/|^[\\/]|\b(?:\d{1,3}\.){3}\d{1,3}\b|(?:^|\s)(?:localhost|(?:[\w-]+\.)+[a-z]{2,})(?:[/:\s]|$)/i.test(query)) {
-    throw new MusicError('Şarkı adı arayın veya tam bir YouTube/Spotify HTTPS bağlantısı girin.');
+    throw new MusicError('Şarkı adı arayın veya tam bir YouTube/SoundCloud/Spotify HTTPS bağlantısı girin.');
   }
   return { query, source, spotify: false };
 }
@@ -133,7 +143,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
       retryAmount: Number.MAX_SAFE_INTEGER, retryDelay: 30_000, requestSignalTimeoutMS: 15_000 }],
     sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard.send(payload),
     client: { id: config.clientId, username: 'Pit-Stop' }, autoSkip: true,
-    playerOptions: { defaultSearchPlatform: 'ytmsearch', volumeDecrementer: 1,
+    playerOptions: { defaultSearchPlatform: 'scsearch', volumeDecrementer: 1,
       onDisconnect: { autoReconnect: false, destroyPlayer: true },
       onEmptyQueue: { destroyAfterMs: IDLE_MS } },
     queueOptions: { maxPreviousTracks: 5 },
@@ -159,7 +169,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
     return {
       configured, available: Boolean(manager?.useable && !closed), enabled: Boolean(settings.musicEnabled),
       connected: Boolean(player?.connected),
-      spotifyConfigured: Boolean(config.spotifyConfigured), spotifyNote: SPOTIFY_NOTE,
+      searchSource: 'scsearch', spotifyConfigured: Boolean(config.spotifyConfigured), spotifyNote: SPOTIFY_NOTE,
       playing: Boolean(player?.playing && !player?.paused), paused: Boolean(player?.paused),
       voiceChannelId: player?.voiceChannelId || null, textChannelId: player?.textChannelId || null,
       volume: player?.volume ?? settings.musicVolume ?? 50,
@@ -194,19 +204,25 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
     const { member, botMember, channel } = await getContext(guildId, actorId, player, settings);
     let message;
     if (action === 'play') {
-      const query = normalizeMusicQuery(options.query, options.source || 'ytmsearch');
+      const query = normalizeMusicQuery(options.query, options.source || 'scsearch');
       if (query.spotify && !config.spotifyConfigured) throw new MusicError('Spotify entegrasyonu yapılandırılmamış. SPOTIFY_ENABLED, SPOTIFY_CLIENT_ID ve SPOTIFY_CLIENT_SECRET sunucuda tanımlanmalı.');
       if ((player?.queue.tracks.length || 0) + (player?.queue.current ? 1 : 0) >= MAX_QUEUE) throw new MusicError(`Kuyruk dolu. En fazla ${MAX_QUEUE} parça tutulabilir.`);
       // Resolve before joining so failed/empty searches do not leave a bot sitting in voice.
       const node = player?.node || manager.nodeManager.leastUsedNodes()[0];
       if (!node) throw new MusicError(NO_NODE, 503);
+      const mediaSource = query.query.startsWith('https://')
+        ? (query.spotify ? 'spotify' : new URL(query.query).hostname.includes('soundcloud.com') ? 'soundcloud' : 'youtube')
+        : query.source === 'scsearch' ? 'soundcloud' : 'youtube';
+      if (Array.isArray(node.info?.sourceManagers) && !node.info.sourceManagers.includes(mediaSource)) {
+        throw new MusicError(`${mediaSource === 'youtube' ? 'YouTube' : mediaSource === 'soundcloud' ? 'SoundCloud' : 'Spotify'} kaynağı sunucuda etkin değil. Yönetici müzik servisini kontrol etmelidir.`, 503);
+      }
       let result;
-      try { result = await node.search({ query: query.query, source: query.source }, { id: member.id, username: member.user.username }); }
+      try { result = await node.search({ query: query.query, source: query.query.startsWith('https://') ? 'link' : query.source }, { id: member.id, username: member.user.username }); }
       catch (error) {
         failLog('music_search_failed', error);
         throw new MusicError(query.spotify
           ? 'Spotify bağlantısı yüklenemedi. Herkese açık bir liste/parça deneyin; yönetici Spotify erişimini kontrol etmelidir.'
-          : 'YouTube araması başarısız. Kaynak şu an erişimi sınırlıyor olabilir; başka bir parça veya daha sonra tekrar deneyin.');
+          : 'Müzik kaynağına erişilemedi. Başka bir bağlantı veya şarkı adı deneyin.');
       }
       // Voice and settings may change while the remote source is loading.
       if (!store.getSettings(guildId).musicEnabled) throw new MusicError('Müzik arama sırasında yönetici tarafından kapatıldı.');
@@ -333,7 +349,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
   const commands = definitions.map(([name, description]) => {
     const data = new SlashCommandBuilder().setName(name).setDescription(description).setContexts(0);
     if (name === 'play') data.addStringOption(option => option.setName('sarki').setDescription('Şarkı adı veya YouTube/Spotify bağlantısı').setRequired(true).setMaxLength(500))
-      .addStringOption(option => option.setName('kaynak').setDescription('Şarkı adıyla arama kaynağı').addChoices({ name: 'YouTube Music', value: 'ytmsearch' }, { name: 'YouTube', value: 'ytsearch' }));
+      .addStringOption(option => option.setName('kaynak').setDescription('Şarkı adıyla arama kaynağı').addChoices({ name: 'SoundCloud', value: 'scsearch' }, { name: 'YouTube Music', value: 'ytmsearch' }, { name: 'YouTube', value: 'ytsearch' }));
     if (name === 'volume') data.addIntegerOption(option => option.setName('seviye').setDescription('0–100 arası ses seviyesi').setRequired(true).setMinValue(0).setMaxValue(100));
     return { data, async execute(interaction) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -346,7 +362,7 @@ export function createMusic(client, store, config = {}, { logger = () => {}, man
         } else {
           const result = await control(interaction.guildId, name, {
             query: name === 'play' ? interaction.options.getString('sarki', true) : undefined,
-            source: name === 'play' ? interaction.options.getString('kaynak') || 'ytmsearch' : undefined,
+            source: name === 'play' ? interaction.options.getString('kaynak') || 'scsearch' : undefined,
             volume: name === 'volume' ? interaction.options.getInteger('seviye', true) : undefined,
             textChannelId: interaction.channelId,
           }, interaction.user.id);

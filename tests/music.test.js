@@ -58,7 +58,7 @@ function setup({ musicEnabled = true, djRoleId = null, search, botChannelId = nu
 }
 
 test('canonicalizes supported URLs and removes tracking, redirects and incidental playlist queries', () => {
-  assert.deepEqual(normalizeMusicQuery('https://youtu.be/dQw4w9WgXcQ?si=secret&redirect=https://127.0.0.1'), { query: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', source: 'ytmsearch', spotify: false });
+  assert.deepEqual(normalizeMusicQuery('https://youtu.be/dQw4w9WgXcQ?si=secret&redirect=https://127.0.0.1'), { query: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', source: 'scsearch', spotify: false });
   assert.equal(normalizeMusicQuery('https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=PLexample').query, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(normalizeMusicQuery('https://www.youtube.com/playlist?list=PLexample&si=abc').query, 'https://www.youtube.com/playlist?list=PLexample');
   assert.equal(normalizeMusicQuery('https://open.spotify.com/intl-tr/track/4PTG3Z6ehGkBFwjybzWkR8?si=secret').query, 'https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8');
@@ -79,7 +79,7 @@ test('rejects network and Lavalink source injection before making remote request
 });
 
 test('music names remain searches, and only the first search result is queued', () => {
-  assert.equal(normalizeMusicQuery('Müslüm Gürses Affet').source, 'ytmsearch');
+  assert.equal(normalizeMusicQuery('Müslüm Gürses Affet').source, 'scsearch');
   assert.equal(normalizeMusicQuery('Daft Punk', 'ytsearch').source, 'ytsearch');
   const result = selectQueueTracks({ loadType: 'search', tracks: [track(0), track(1)] }, 0);
   assert.equal(result.tracks.length, 1);
@@ -179,4 +179,32 @@ test('no audio node permits command registration and dashboard with honest unava
   assert.equal(music.getStatus('guild').available, false);
   await assert.rejects(music.control('guild', 'play', { query: 'song' }, 'member'), error => error.status === 503 && error.userMessage.includes('Lavalink'));
   await music.initialize(); await music.close();
+});
+
+
+test('panel requests use the working default and send media URLs as links', async () => {
+  const queries = [];
+  const fixture = setup({ search: async q => { queries.push(q); return { loadType: 'track', tracks: [track()] }; } });
+  await fixture.music.control('guild', 'play', { query: 'https://soundcloud.com/artist/song?si=tracking' }, 'member');
+  await fixture.music.control('guild', 'play', { query: 'Artist Song' }, 'member');
+  assert.deepEqual(queries, [{ query: 'https://soundcloud.com/artist/song', source: 'link' }, { query: 'Artist Song', source: 'scsearch' }]);
+  assert.equal(fixture.music.getStatus('guild').searchSource, 'scsearch');
+});
+
+test('disabled YouTube is reported honestly while SoundCloud links still load', async () => {
+  const queries = [];
+  const fixture = setup({ search: async q => { queries.push(q); return { loadType: 'track', tracks: [track()] }; } });
+  fixture.manager.nodeManager.nodes.get('node').info = { sourceManagers: ['soundcloud'] };
+  await assert.rejects(fixture.music.control('guild', 'play', { query: 'https://youtu.be/dQw4w9WgXcQ' }, 'member'), error => error.status === 503 && /YouTube.*etkin değil/.test(error.message));
+  assert.equal(fixture.searches(), 0);
+  await fixture.music.control('guild', 'play', { query: 'https://soundcloud.com/artist/song' }, 'member');
+  assert.equal(fixture.searches(), 1);
+  assert.equal(queries[0].source, 'link');
+});
+
+test('SoundCloud canonicalization accepts media links without allowing other destinations', () => {
+  assert.equal(normalizeMusicQuery('https://m.soundcloud.com/artist/song?si=abc&redirect=http://localhost').query, 'https://soundcloud.com/artist/song');
+  assert.equal(normalizeMusicQuery('https://soundcloud.com/artist/song?secret_token=s-private&si=abc').query, 'https://soundcloud.com/artist/song?secret_token=s-private');
+  assert.equal(normalizeMusicQuery('https://on.soundcloud.com/ShareCode?si=abc').query, 'https://on.soundcloud.com/ShareCode');
+  for (const input of ['https://soundcloud.com.evil.test/artist/song', 'https://evil.test@soundcloud.com/artist/song', 'https://soundcloud.com/artist/song?secret_token=bad', 'https://soundcloud.com/', 'https://soundcloud.com/../', 'https://soundcloud.com:444/artist/song']) assert.throws(() => normalizeMusicQuery(input), MusicError);
 });

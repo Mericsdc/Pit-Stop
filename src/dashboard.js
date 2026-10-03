@@ -15,6 +15,8 @@ const packageInfo = JSON.parse(await readFile(new URL('../package.json', import.
 const buildInfo = process.env.PIT_STOP_BUILD || (await readFile(new URL('../BUILD_ID', import.meta.url), 'utf8').catch(() => 'development')).trim();
 const manageGuild = PermissionFlagsBits.ManageGuild;
 const staticFiles = new Map([
+  ['/assets/panel-dm-sans.ttf', ['assets/panel-dm-sans.ttf', 'font/ttf']],
+  ['/assets/panel-inter-bold.ttf', ['assets/panel-inter-bold.ttf', 'font/ttf']],
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/login-background.js', ['login-background.js', 'text/javascript; charset=utf-8']],
@@ -648,8 +650,8 @@ export function createDashboard({ client, store, music, features, crew, boostedE
         const body = await readJson(request);
         if (!['play', 'pause', 'resume', 'skip', 'stop', 'volume'].includes(body.action)) throw httpError(400, 'Geçersiz müzik işlemi.');
         try {
-          await music.control(guildId, body.action, { query: body.query, volume: body.volume }, session.user.id);
-        } catch (error) { throw httpError(400, error.userMessage || 'Müzik işlemi tamamlanamadı. Botla aynı ses kanalında olduğunuzu ve müzik bağlantısını kontrol edin.'); }
+          await music.control(guildId, body.action, { query: body.query, volume: body.volume, source: body.source }, session.user.id);
+        } catch (error) { throw httpError([400, 403, 404, 429, 503].includes(error.status) ? error.status : 400, error.userMessage || 'Müzik işlemi tamamlanamadı. Botla aynı ses kanalında olduğunuzu ve müzik bağlantısını kontrol edin.'); }
         json(response, 200, music.getStatus(guildId));
         return;
       }
